@@ -133,22 +133,22 @@ impl<'a> Move<'a> {
 
             let mask: Bitboard = sq.into();
             pos.occ_squares ^= mask;
-            pos.occ_by_color[!pos.turn as usize] ^= mask;
-            pos.occ_by_piece[!pos.turn as usize][capt_pc as usize] ^= mask;
-            pos.zobrist.toggle_piece_placement(!pos.turn, capt_pc, sq);
+            pos.occ_by_color[!pos.turn() as usize] ^= mask;
+            pos.occ_by_piece[!pos.turn() as usize][capt_pc as usize] ^= mask;
+            pos.zobrist.toggle_piece_placement(!pos.turn(), capt_pc, sq);
 
-            // update opponent's castling rigts if applicable
-            match (!pos.turn, sq) {
+            // update opponent's castling rights if applicable
+            match (!pos.turn(), sq) {
                 (White, Square::A1) | (Black, Square::A8) => {
-                    if pos.castling_rights[!pos.turn as usize] & CASTLE_QUEEN_SIDE != 0 {
-                        pos.castling_rights[!pos.turn as usize] &= !CASTLE_QUEEN_SIDE;
-                        pos.zobrist.toggle_castling_rights(!pos.turn, CASTLE_QUEEN_SIDE);
+                    if pos.has_queen_side_castling_rights(!pos.turn()) {
+                        pos.castling_rights[!pos.turn() as usize] &= !CASTLE_QUEEN_SIDE;
+                        pos.zobrist.toggle_castling_rights(!pos.turn(), CASTLE_QUEEN_SIDE);
                     }
                 },
                 (White, Square::H1) | (Black, Square::H8) => {
-                    if pos.castling_rights[!pos.turn as usize] & CASTLE_KING_SIDE != 0 {
-                        pos.castling_rights[!pos.turn as usize] &= !CASTLE_KING_SIDE;
-                        pos.zobrist.toggle_castling_rights(!pos.turn, CASTLE_KING_SIDE);
+                    if pos.has_king_side_castling_rights(!pos.turn()) {
+                        pos.castling_rights[!pos.turn() as usize] &= !CASTLE_KING_SIDE;
+                        pos.zobrist.toggle_castling_rights(!pos.turn(), CASTLE_KING_SIDE);
                     }
                 },
                 _ => {},
@@ -158,17 +158,17 @@ impl<'a> Move<'a> {
         // move piece to new location (update piece type if promotion)
         let mask = Bitboard::from(self.orig) | self.dest.into();
         pos.occ_squares ^= mask;
-        pos.occ_by_color[pos.turn as usize] ^= mask;
-        pos.zobrist.toggle_piece_placement(pos.turn, self.piece, self.orig);
+        pos.occ_by_color[pos.turn() as usize] ^= mask;
+        pos.zobrist.toggle_piece_placement(pos.turn(), self.piece, self.orig);
         match self.move_type {
             MoveType::Promotion(prom_pc) => {
-                pos.occ_by_piece[pos.turn as usize][self.piece as usize] ^= self.orig.into();
-                pos.occ_by_piece[pos.turn as usize][prom_pc as usize] ^= self.dest.into();
-                pos.zobrist.toggle_piece_placement(pos.turn, prom_pc.into(), self.dest);
+                pos.occ_by_piece[pos.turn() as usize][self.piece as usize] ^= self.orig.into();
+                pos.occ_by_piece[pos.turn() as usize][prom_pc as usize] ^= self.dest.into();
+                pos.zobrist.toggle_piece_placement(pos.turn(), prom_pc.into(), self.dest);
             },
             _ => {
-                pos.occ_by_piece[pos.turn as usize][self.piece as usize] ^= mask;
-                pos.zobrist.toggle_piece_placement(pos.turn, self.piece, self.dest);
+                pos.occ_by_piece[pos.turn() as usize][self.piece as usize] ^= mask;
+                pos.zobrist.toggle_piece_placement(pos.turn(), self.piece, self.dest);
             },
         }
 
@@ -188,24 +188,24 @@ impl<'a> Move<'a> {
                 _ => unreachable!(),
             }
 
-            if pos.square_attacked_by(dest, !pos.turn) {
+            if pos.square_attacked_by(dest, !pos.turn()) {
                 // castling through check
                 return Err(MakeMoveError::CastlingThroughCheck);
             }
 
             let mask = Bitboard::from(orig) | dest.into();
             pos.occ_squares ^= mask;
-            pos.occ_by_color[pos.turn as usize] ^= mask;
-            pos.occ_by_piece[pos.turn as usize][Rook as usize] ^= mask;
-            pos.zobrist.toggle_piece_placement(pos.turn, Rook, orig);
-            pos.zobrist.toggle_piece_placement(pos.turn, Rook, dest);
+            pos.occ_by_color[pos.turn() as usize] ^= mask;
+            pos.occ_by_piece[pos.turn() as usize][Rook as usize] ^= mask;
+            pos.zobrist.toggle_piece_placement(pos.turn(), Rook, orig);
+            pos.zobrist.toggle_piece_placement(pos.turn(), Rook, dest);
         }
 
         // verify mover is not in check
-        let king_attacked = if self.piece != King && !pos.in_check {
-            pos.square_attacked_by_sliding(pos.king_location(pos.turn), !pos.turn)
+        let king_attacked = if self.piece != King && !pos.in_check() {
+            pos.square_attacked_by_sliding(pos.king_location(pos.turn()), !pos.turn())
         } else {
-            pos.square_attacked_by(pos.king_location(pos.turn), !pos.turn)
+            pos.square_attacked_by(pos.king_location(pos.turn()), !pos.turn())
         };
         if king_attacked {
             // own king is under attack
@@ -213,49 +213,49 @@ impl<'a> Move<'a> {
         }
 
         // update en passant square
-        if let Some(ep_sq) = pos.ep_square {
+        if let Some(ep_sq) = pos.en_passant_square() {
             pos.zobrist.toggle_ep_square(ep_sq);
         }
         if self.move_type == MoveType::Advance2 {
-            pos.ep_square = match pos.turn {
+            pos.ep_square = match pos.turn() {
                 White => Some(Square::from_coord(self.dest.file(), Rank::R3)),
                 Black => Some(Square::from_coord(self.dest.file(), Rank::R6)),
             };
-            pos.zobrist.toggle_ep_square(pos.ep_square.expect("INFALLIBLE"));
+            pos.zobrist.toggle_ep_square(pos.en_passant_square().expect("INFALLIBLE"));
         } else {
             pos.ep_square = None;
         }
 
-        // update castling rigts if applicable
-        match (pos.turn, self.orig) {
+        // update castling rights if applicable
+        match (pos.turn(), self.orig) {
             (White, Square::A1) | (Black, Square::A8) => {
-                if pos.castling_rights[pos.turn as usize] & CASTLE_QUEEN_SIDE != 0 {
-                    pos.castling_rights[pos.turn as usize] &= !CASTLE_QUEEN_SIDE;
-                    pos.zobrist.toggle_castling_rights(pos.turn, CASTLE_QUEEN_SIDE);
+                if pos.has_queen_side_castling_rights(pos.turn()) {
+                    pos.castling_rights[pos.turn() as usize] &= !CASTLE_QUEEN_SIDE;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), CASTLE_QUEEN_SIDE);
                 }
             },
             (White, Square::H1) | (Black, Square::H8) => {
-                if pos.castling_rights[pos.turn as usize] & CASTLE_KING_SIDE != 0 {
-                    pos.castling_rights[pos.turn as usize] &= !CASTLE_KING_SIDE;
-                    pos.zobrist.toggle_castling_rights(pos.turn, CASTLE_KING_SIDE);
+                if pos.has_king_side_castling_rights(pos.turn()) {
+                    pos.castling_rights[pos.turn() as usize] &= !CASTLE_KING_SIDE;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), CASTLE_KING_SIDE);
                 }
             },
             (White, Square::E1) | (Black, Square::E8) => {
-                if pos.castling_rights[pos.turn as usize] != 0 {
-                    let castling_rights = pos.castling_rights[pos.turn as usize];
-                    pos.castling_rights[pos.turn as usize] = 0;
-                    pos.zobrist.toggle_castling_rights(pos.turn, castling_rights);
+                if pos.has_castling_rights(pos.turn()) {
+                    let castling_rights = pos.castling_rights[pos.turn() as usize];
+                    pos.castling_rights[pos.turn() as usize] = 0;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), castling_rights);
                 }
             },
             _ => {},
         }
 
         // switch turns
-        pos.turn = !pos.turn;
+        pos.turn = !pos.turn();
         pos.zobrist.toggle_turn();
 
         // update move counters
-        if pos.turn == White {
+        if pos.turn() == White {
             pos.move_num += 1;
         }
         if self.capt_pc.is_some() || self.piece == Pawn {
@@ -267,10 +267,10 @@ impl<'a> Move<'a> {
         // determine if opponent is now in check
         pos.in_check = match self.piece {
             Pawn | Knight => {
-                pos.square_attacked_by(pos.king_location(pos.turn), !pos.turn)
+                pos.square_attacked_by(pos.king_location(pos.turn()), !pos.turn())
             },
             _ => {
-                pos.square_attacked_by_sliding(pos.king_location(pos.turn), !pos.turn)
+                pos.square_attacked_by_sliding(pos.king_location(pos.turn()), !pos.turn())
             }
         };
 
@@ -310,13 +310,13 @@ impl<'a> fmt::Display for Move<'a> {
                 s += &self.orig.file().to_string();
             }
         } else {
-            let all_pieces = self.pos.occ_by_piece[self.pos.turn as usize][self.piece as usize];
+            let all_pieces = self.pos.occupied_by_piece(self.pos.turn(), self.piece);
             let attacks = match self.piece {
                 Pawn => unreachable!(),
                 Knight => knight_attacks(self.dest),
-                Bishop => bishop_attacks(self.dest, self.pos.occ_squares),
-                Rook => rook_attacks(self.dest, self.pos.occ_squares),
-                Queen => queen_attacks(self.dest, self.pos.occ_squares),
+                Bishop => bishop_attacks(self.dest, self.pos.occupied()),
+                Rook => rook_attacks(self.dest, self.pos.occupied()),
+                Queen => queen_attacks(self.dest, self.pos.occupied()),
                 King => king_attacks(self.dest),
             };
             let eligible = all_pieces & attacks;
@@ -412,16 +412,20 @@ impl<'a> Iterator for Moves<'a> {
             } else {
                 self.state = MovesState::Castling;
                 self.piece = King;
-                let rights = if !pos.in_check { pos.castling_rights[pos.turn as usize] } else { 0 };
+                let rights = if !pos.in_check() {
+                    pos.castling_rights[pos.turn() as usize]
+                } else {
+                    0
+                };
                 let mask = match rights {
                     CASTLE_KING_SIDE => Bitboard::from(File::H),
                     CASTLE_QUEEN_SIDE => Bitboard::from(File::A),
                     CASTLE_BOTH_SIDES => Bitboard::from(File::A) | File::H.into(),
                     _ => Bitboard::new(),
                 };
-                self.orig = pos.king_location(pos.turn);
-                self.board2 = rank_attacks(self.orig, pos.occ_squares) &
-                    pos.occ_by_piece[pos.turn as usize][Rook as usize] & mask;
+                self.orig = pos.king_location(pos.turn());
+                self.board2 = rank_attacks(self.orig, pos.occupied()) &
+                    pos.occupied_by_piece(pos.turn(), Rook) & mask;
             }
         }
 
@@ -443,20 +447,20 @@ impl<'a> Iterator for Moves<'a> {
                     move_type: MoveType::Castling,
                 });
             } else {
-                let forward = if pos.turn == White { 1 } else { -1 };
+                let forward = if pos.turn() == White { 1 } else { -1 };
                 self.state = PawnAdvancement(forward);
                 self.piece = Pawn;
-                let pieces = pos.occ_by_piece[pos.turn as usize][self.piece as usize];
+                let pieces = pos.occupied_by_piece(pos.turn(), self.piece);
                 let mask = Bitboard::from(Rank::R1) | Rank::R8.into();
-                self.board1 = pieces.shift_y(forward) & !pos.occ_squares & !mask;
-                let adv2_rank = if pos.turn == White { Rank::R4 } else { Rank::R5 };
-                self.board2 = self.board1.shift_y(forward) & !pos.occ_squares & adv2_rank.into();
+                self.board1 = pieces.shift_y(forward) & !pos.occupied() & !mask;
+                let adv2_rank = if pos.turn() == White { Rank::R4 } else { Rank::R5 };
+                self.board2 = self.board1.shift_y(forward) & !pos.occupied() & adv2_rank.into();
             }
         }
 
         while let PawnAdvancement(forward) = self.state {
             if let Some(dest) = self.board2.pop() {
-                let orig_rank = if pos.turn == White { Rank::R2 } else { Rank::R7 };
+                let orig_rank = if pos.turn() == White { Rank::R2 } else { Rank::R7 };
                 let orig = Square::from_coord(dest.file(), orig_rank);
 
                 return Some(Move {
@@ -483,7 +487,7 @@ impl<'a> Iterator for Moves<'a> {
             } else {
                 self.state = Remaining;
                 self.piece = Knight;
-                self.board1 = pos.occ_by_piece[pos.turn as usize][self.piece as usize];
+                self.board1 = pos.occupied_by_piece(pos.turn(), self.piece);
             }
         }
 
@@ -499,12 +503,12 @@ impl<'a> Iterator for Moves<'a> {
                 });
             } else if let Some(orig) = self.board1.pop() {
                 self.orig = orig;
-                self.board2 = !pos.occ_squares & match self.piece {
+                self.board2 = !pos.occupied() & match self.piece {
                     Pawn => unreachable!(),
                     Knight => knight_attacks(orig),
-                    Bishop => bishop_attacks(orig, pos.occ_squares),
-                    Rook => rook_attacks(orig, pos.occ_squares),
-                    Queen => queen_attacks(orig, pos.occ_squares),
+                    Bishop => bishop_attacks(orig, pos.occupied()),
+                    Rook => rook_attacks(orig, pos.occupied()),
+                    Queen => queen_attacks(orig, pos.occupied()),
                     King => king_attacks(orig),
                 };
             } else if self.piece < King {
@@ -515,7 +519,7 @@ impl<'a> Iterator for Moves<'a> {
                     Queen => King,
                     _ => unreachable!(),
                 };
-                self.board1 = pos.occ_by_piece[pos.turn as usize][self.piece as usize];
+                self.board1 = pos.occupied_by_piece(pos.turn(), self.piece);
             } else {
                 self.state = Finished;
             }
@@ -563,16 +567,20 @@ enum PromAndCaptState {
 
 impl<'a> PromotionsAndCaptures<'a> {
     pub (super) fn new(pos: &'a Position) -> PromotionsAndCaptures {
-        let forward = if pos.turn == White { 1 } else { -1 };
+        let forward = if pos.turn() == White { 1 } else { -1 };
         let mask = Bitboard::from(Rank::R1) | Rank::R8.into();
-        let targets = mask & pos.occ_by_piece[!pos.turn as usize][Queen as usize];
-        let pieces = pos.occ_by_piece[pos.turn as usize][Pawn as usize];
+        let targets = mask & pos.occupied_by_piece(!pos.turn(), Queen);
+        let pieces = pos.occupied_by_piece(pos.turn(), Pawn);
         let destinations = pieces.shift_xy(-1, forward) & targets;
 
         PromotionsAndCaptures{
             pos,
             forward,
-            ep_mask: if let Some(ep_sq) = pos.ep_square { ep_sq.into() } else { Bitboard::new() },
+            ep_mask: if let Some(ep_sq) = pos.en_passant_square() {
+                ep_sq.into()
+            } else {
+                Bitboard::new()
+            },
             under_promotions: VecDeque::new(),
 
             state: PromAndCaptState::CapturePromotions,
@@ -631,13 +639,13 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     _ => unreachable!(),
                 };
                 let mask = Bitboard::from(Rank::R1) | Rank::R8.into();
-                self.targets = mask & pos.occ_by_piece[!pos.turn as usize][self.victim as usize];
+                self.targets = mask & pos.occupied_by_piece(!pos.turn(), self.victim);
                 self.side = -1;
                 self.destinations = self.pieces.shift_xy(self.side, self.forward) & self.targets;
             } else {
                 self.state = Promotions;
                 let mask = Bitboard::from(Rank::R1) | Rank::R8.into();
-                self.targets = mask & !pos.occ_squares;
+                self.targets = mask & !pos.occupied();
                 self.destinations = self.pieces.shift_y(self.forward) & self.targets;
             }
         }
@@ -668,9 +676,9 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
             } else {
                 self.state = Captures;
                 self.victim = Queen;
-                self.targets = pos.occ_by_piece[!pos.turn as usize][self.victim as usize];
+                self.targets = pos.occupied_by_piece(!pos.turn(), self.victim);
                 self.attacker = Pawn;
-                self.pieces = pos.occ_by_piece[pos.turn as usize][self.attacker as usize];
+                self.pieces = pos.occupied_by_piece(pos.turn(), self.attacker);
                 self.side = -3;
             }
         }
@@ -685,7 +693,7 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     let rank = Rank::try_from((dest.rank() as i8 - self.forward) as usize)
                         .expect("INFALLIBLE");
                     let orig = Square::from_coord(file, rank);
-                    let move_type = match pos.ep_square {
+                    let move_type = match pos.en_passant_square() {
                         Some(ep_sq) if dest == ep_sq => MoveType::EnPassant,
                         _ => MoveType::Standard,
                     };
@@ -716,7 +724,7 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                 if self.victim == Pawn {
                     targets |= self.ep_mask;
                 };
-                let pieces = pos.occ_by_piece[pos.turn as usize][self.attacker as usize];
+                let pieces = pos.occupied_by_piece(pos.turn(), self.attacker);
                 self.destinations = pieces.shift_xy(self.side, self.forward) & targets;
                 self.pieces = Bitboard::new();
             } else if let Some(orig) = self.pieces.pop() {
@@ -725,9 +733,9 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                 self.destinations = self.targets & match self.attacker {
                     Pawn => unreachable!(),
                     Knight => knight_attacks(orig),
-                    Bishop => bishop_attacks(orig, pos.occ_squares),
-                    Rook => rook_attacks(orig, pos.occ_squares),
-                    Queen => queen_attacks(orig, pos.occ_squares),
+                    Bishop => bishop_attacks(orig, pos.occupied()),
+                    Rook => rook_attacks(orig, pos.occupied()),
+                    Queen => queen_attacks(orig, pos.occupied()),
                     King => king_attacks(orig),
                 };
             } else if self.attacker < King {
@@ -740,7 +748,7 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     Queen => King,
                     King => unreachable!(),
                 };
-                self.pieces = pos.occ_by_piece[pos.turn as usize][self.attacker as usize];
+                self.pieces = pos.occupied_by_piece(pos.turn(), self.attacker);
             } else if self.victim > Pawn {
                 // switch to new victim piece type
                 self.victim = match self.victim {
@@ -750,9 +758,9 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     Knight => Pawn,
                     _ => unreachable!(),
                 };
-                self.targets = pos.occ_by_piece[!pos.turn as usize][self.victim as usize];
+                self.targets = pos.occupied_by_piece(!pos.turn(), self.victim);
                 self.attacker = Pawn;
-                self.pieces = pos.occ_by_piece[pos.turn as usize][self.attacker as usize];
+                self.pieces = pos.occupied_by_piece(pos.turn(), self.attacker);
                 self.side = -3;
             } else {
                 self.state = UnderPromotions;

@@ -211,13 +211,13 @@ impl Position {
         }
 
         // validate position legality
-        for c in 0..Color::COUNT {
+        for c in &[White, Black] {
             // Step 1: verify exactly one king per side
-            if pos.occ_by_piece[c][King as usize].len() != 1 {
+            if pos.occupied_by_piece(*c, King).len() != 1 {
                 return Err(KingCount);
             }
             // Step 2: no pawns on ranks 1 and 8
-            if pos.occ_by_piece[c][Pawn as usize]
+            if pos.occupied_by_piece(*c, Pawn)
                 .intersects(Bitboard::from(Rank::R1) | Rank::R8.into()) {
                 return Err(InvalidPawnRank);
             }
@@ -232,27 +232,24 @@ impl Position {
                 return Err(EnPassantPawn);
             }
             let forward = if pos.turn == White { 1 } else { -1 };
-            if !pos.occ_by_piece[!pos.turn as usize][Pawn as usize]
-                .shift_y(forward).contains(ep_square) {
+            if !pos.occupied_by_piece(!pos.turn, Pawn).shift_y(forward).contains(ep_square) {
                 return Err(EnPassantPawn);
             }
         }
         // Step 5: if castling rights exist, king and rook must be in the correct squares
-        for c in 0..Color::COUNT {
-            if pos.castling_rights[c] != 0 {
-                let r = if c == White as usize { Rank::R1 } else { Rank::R8 };
+        for c in &[White, Black] {
+            if pos.has_castling_rights(*c) {
+                let r = if *c == White { Rank::R1 } else { Rank::R8 };
 
-                if !pos.occ_by_piece[c][King as usize].contains(Square::from_coord(File::E, r)) {
+                if !pos.occupied_by_piece(*c, King).contains(Square::from_coord(File::E, r)) {
                     return Err(InvalidCastling);
                 }
-                if pos.castling_rights[c] & CASTLE_QUEEN_SIDE != 0
-                    && !pos.occ_by_piece[c][Rook as usize]
-                        .contains(Square::from_coord(File::A, r)) {
+                if pos.has_queen_side_castling_rights(*c)
+                    && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::A, r)) {
                     return Err(InvalidCastling);
                 }
-                if pos.castling_rights[c] & CASTLE_KING_SIDE != 0
-                    && !pos.occ_by_piece[c][Rook as usize]
-                        .contains(Square::from_coord(File::H, r)) {
+                if pos.has_king_side_castling_rights(*c)
+                    && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::H, r)) {
                     return Err(InvalidCastling);
                 }
             }
@@ -271,12 +268,10 @@ impl Position {
         let mut arr: [[Option<(Color, Piece)>;Rank::COUNT];File::COUNT]
             = [[None;Rank::COUNT];File::COUNT];
 
-        for c in 0..Color::COUNT {
-            let color: Color = c.try_into().expect("INVALLIBLE");
-            for p in 0..Piece::COUNT {
-                let piece: Piece = p.try_into().expect("INVALLIBLE");
-                for sq in self.occ_by_piece[c][p] {
-                    arr[sq.file() as usize][sq.rank() as usize] = Some((color, piece));
+        for c in &[White, Black] {
+            for p in &[Pawn, Knight, Bishop, Rook, Queen, King] {
+                for sq in self.occupied_by_piece(*c, *p) {
+                    arr[sq.file() as usize][sq.rank() as usize] = Some((*c, *p));
                 }
             }
         }
@@ -351,9 +346,29 @@ impl Position {
         self.turn
     }
 
+    /// Returns the en-passant square, if any
+    pub fn en_passant_square(&self) -> Option<Square> {
+        self.ep_square
+    }
+
     /// Returns `true` if the color to move is in check.
     pub fn in_check(&self) -> bool {
         self.in_check
+    }
+
+    /// Returns `true` if king-side castling rights are available
+    pub fn has_king_side_castling_rights(&self, c: Color) -> bool {
+        self.castling_rights[c as usize] & CASTLE_KING_SIDE != 0
+    }
+
+    /// Returns `true` if queen-side castling rights are available
+    pub fn has_queen_side_castling_rights(&self, c: Color) -> bool {
+        self.castling_rights[c as usize] & CASTLE_QUEEN_SIDE != 0
+    }
+
+    /// Returns `true` if any castling rights are available
+    pub fn has_castling_rights(&self, c: Color) -> bool {
+        self.castling_rights[c as usize] != 0
     }
 
     /// Returns `true` if a draw by the fifty move rule can be claimed (assuming the game isn't
@@ -367,20 +382,39 @@ impl Position {
         self.draw_plies
     }
 
+    /// Returns the move number
+    pub fn move_number(&self) -> usize {
+        self.move_num
+    }
+
+    /// Returns a `Bitboard` of all occupied `Square`s
+    pub fn occupied(&self) -> Bitboard {
+        self.occ_squares
+    }
+
+    /// Returns a `Bitboard` of `Squares` occupied by player `c`
+    pub fn occupied_by(&self, c: Color) -> Bitboard {
+        self.occ_by_color[c as usize]
+    }
+
+    /// Returns a `Bitboard` of `Squares` occupied by the given `Piece` and `Color`
+    pub fn occupied_by_piece(&self, c: Color, p: Piece) -> Bitboard {
+        self.occ_by_piece[c as usize][p as usize]
+    }
+
     /// Returns the square where the king of the given color is located
     pub fn king_location(&self, c: Color) -> Square {
-        self.occ_by_piece[c as usize][King as usize].peek().expect("INFALLIBLE")
+        self.occupied_by_piece(c, King).peek().expect("INFALLIBLE")
     }
 
     /// Returns the color and type of piece, if any, at the given location
     pub fn piece_at(&self, sq: Square) -> Option<(Color, Piece)> {
         if self.occ_squares.contains(sq) {
-            for c in 0..Color::COUNT {
-                if self.occ_by_color[c].contains(sq) {
-                    for p in 0..Piece::COUNT {
-                        if self.occ_by_piece[c][p].contains(sq) {
-                            return Some((c.try_into().expect("INFALLIBLE"),
-                                        p.try_into().expect("INFALLIBLE")))
+            for c in &[White, Black] {
+                if self.occupied_by(*c).contains(sq) {
+                    for p in &[Pawn, Knight, Bishop, Rook, Queen, King] {
+                        if self.occupied_by_piece(*c, *p).contains(sq) {
+                            return Some((*c, *p));
                         }
                     }
                     unreachable!()
@@ -508,7 +542,7 @@ impl Position {
             King => {
                 match (orig.file(), dest.file()) {
                     (File::E, File::G) => {
-                        if self.castling_rights[self.turn as usize] & CASTLE_KING_SIDE != 0
+                        if self.has_king_side_castling_rights(self.turn)
                             && rank_attacks(orig, self.occ_squares)
                             .intersects(File::H.into()) {
                             valid_move_type = MoveType::Castling;
@@ -517,7 +551,7 @@ impl Position {
                         }
                     },
                     (File::E, File::C) => {
-                        if self.castling_rights[self.turn as usize] & CASTLE_QUEEN_SIDE != 0
+                        if self.has_queen_side_castling_rights(self.turn)
                             && rank_attacks(orig, self.occ_squares)
                             .intersects(File::H.into()) {
                             valid_move_type = MoveType::Castling;
@@ -666,7 +700,7 @@ impl Position {
                 Pawn
             };
 
-            let mask = mask & self.occ_by_piece[self.turn as usize][piece as usize] & match piece {
+            let mask = mask & self.occupied_by_piece(self.turn, piece) & match piece {
                 King => { king_attacks(dest) },
                 Queen => { queen_attacks(dest, self.occ_squares) },
                 Rook => { rook_attacks(dest, self.occ_squares) },
@@ -734,7 +768,7 @@ impl Position {
 
         for c in &[ White, Black ] {
             for p in &[ Pawn, Knight, Bishop, Rook, Queen, King ] {
-                for sq in self.occ_by_piece[*c as usize][*p as usize] {
+                for sq in self.occupied_by_piece(*c, *p) {
                     self.zobrist.toggle_piece_placement(*c, *p, sq);
                 }
             }
@@ -753,9 +787,9 @@ impl Position {
     ///
     /// This is useful for finding discovered attacks.
     pub fn square_attacked_by_sliding(&self, sq: Square, c: Color) -> bool {
-        let bishops = self.occ_by_piece[c as usize][Bishop as usize];
-        let rooks = self.occ_by_piece[c as usize][Rook as usize];
-        let queens = self.occ_by_piece[c as usize][Queen as usize];
+        let bishops = self.occupied_by_piece(c, Bishop);
+        let rooks = self.occupied_by_piece(c, Rook);
+        let queens = self.occupied_by_piece(c, Queen);
 
         bishop_attacks(sq, self.occ_squares).intersects(bishops | queens)
             || rook_attacks(sq, self.occ_squares).intersects(rooks | queens)
@@ -763,18 +797,18 @@ impl Position {
 
     /// Returns `true` if `sq` is attacked by the king of color `c`.
     pub fn square_attacked_by_king(&self, sq: Square, c: Color) -> bool {
-        king_attacks(sq).intersects(self.occ_by_piece[c as usize][King as usize])
+        king_attacks(sq).intersects(self.occupied_by_piece(c, King))
     }
 
     /// Returns `true` if `sq` is attacked by a knight of color `c`.
     pub fn square_attacked_by_knight(&self, sq: Square, c: Color) -> bool {
-        knight_attacks(sq).intersects(self.occ_by_piece[c as usize][Knight as usize])
+        knight_attacks(sq).intersects(self.occupied_by_piece(c, Knight))
     }
 
     /// Returns a bitboard containing all squares attacked by pawns of color `c`
     pub fn pawn_attacks(&self, c: Color) -> Bitboard {
         let forward = if c == White { 1 } else { -1 };
-        let pawns = self.occ_by_piece[c as usize][Pawn as usize];
+        let pawns = self.occupied_by_piece(c, Pawn);
         pawns.shift_xy(-1, forward) | pawns.shift_xy(1, forward)
     }
 }

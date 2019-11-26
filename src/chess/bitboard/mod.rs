@@ -7,8 +7,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::convert::TryInto;
 use std::iter::FusedIterator;
-use std::iter::FromIterator;
+use std::iter::{FromIterator, Extend};
 use std::ops;
+use std::fmt;
 use super::*;
 
 mod attacks;
@@ -182,6 +183,36 @@ impl ops::BitXorAssign for Bitboard {
     }
 }
 
+impl fmt::Display for Bitboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::LowerHex::fmt(&self.0, f)
+    }
+}
+
+impl fmt::UpperHex for Bitboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::LowerHex for Bitboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Octal for Bitboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Binary for Bitboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl From<u64> for Bitboard {
     fn from(val: u64) -> Bitboard {
         Bitboard(val)
@@ -234,6 +265,14 @@ impl FromIterator<Square> for Bitboard {
     }
 }
 
+impl Extend<Square> for Bitboard {
+    fn extend<I: IntoIterator<Item=Square>>(&mut self, iter: I) {
+        for sq in iter {
+            self.insert(sq);
+        }
+    }
+}
+
 /// Iterator over the squares of a `Bitboard`
 #[derive(Debug, Copy, Clone)]
 pub struct IntoIter(Bitboard);
@@ -279,5 +318,29 @@ mod tests {
         // test intersects() and is_disjoint() methods
 
         // test insert(), remove() and toggle() methods
+
+        // test formatting
+        assert_eq!(format!("{}", Bitboard::from(0x0123456789abcdef)), "123456789abcdef");
+        assert_eq!(format!("{:016}", Bitboard::from(0x0123456789abcdef)), "0123456789abcdef");
+        assert_eq!(format!("{:x}", Bitboard::from(0x0123456789abcdef)), "123456789abcdef");
+        assert_eq!(format!("{:016x}", Bitboard::from(0x0123456789abcdef)), "0123456789abcdef");
+        assert_eq!(format!("{:X}", Bitboard::from(0x0123456789ABCDEF)), "123456789ABCDEF");
+        assert_eq!(format!("{:016X}", Bitboard::from(0x0123456789ABCDEF)), "0123456789ABCDEF");
+        assert_eq!(
+            format!("{:o}", Bitboard::from(0x0123456789abcdef)),
+            "4432126361152746757"
+        );
+        assert_eq!(
+            format!("{:022o}", Bitboard::from(0x0123456789abcdef)),
+            "0004432126361152746757"
+        );
+        assert_eq!(
+            format!("{:b}", Bitboard::from(0x0123456789abcdef)),
+            "100100011010001010110011110001001101010111100110111101111"
+        );
+        assert_eq!(
+            format!("{:064b}", Bitboard::from(0x0123456789abcdef)),
+            "0000000100100011010001010110011110001001101010111100110111101111"
+        );
     }
 }
