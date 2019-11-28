@@ -1,5 +1,7 @@
 //! Contains structures related to the `Position`
 //
+//  Copyright 2019 Michael Leany
+//
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -113,8 +115,8 @@ impl Position {
     }
 
     /// Parse a position from a FEN string
-    pub fn from_fen_str(s: &str) -> Result<Position, ParseFenError> {
-        use ParseFenError::*;
+    pub fn from_fen_str(s: &str) -> Result<Position> {
+        use Error::*;
 
         let mut pos = PositionBuilder::new();
         let mut fields = s.trim().split_whitespace();
@@ -128,7 +130,7 @@ impl Position {
                     '1' ... '8' => {
                         f += c.to_digit(10).expect("INFALLIBLE") as usize;
                         if f > 8 {
-                            return Err(ParseBoard);
+                            return Err(ParseError);
                         }
                     }
                     '/' => {
@@ -136,13 +138,13 @@ impl Position {
                             r -= 1;
                             f = 0;
                         } else {
-                            return Err(ParseBoard);
+                            return Err(ParseError);
                         }
                     }
                     _ => {
                         let sq = match (f.try_into(), r.try_into()) {
                             (Ok(f), Ok(r)) => Square::from_coord(f, r),
-                            _ => return Err(ParseBoard),
+                            _ => return Err(ParseError),
                         };
                         let color = if c.is_uppercase() { White } else { Black };
                         let piece: Piece = c.to_string().parse()?;
@@ -155,16 +157,16 @@ impl Position {
                 }
             }
             if r > 0 || f < 8 {
-                return Err(ParseBoard);
+                return Err(ParseError);
             }
         } else {
-            return Err(Empty);
+            return Err(ParseError);
         }
 
         // parse the turn
         match fields.next() {
             Some(turn) => { pos.turn(turn.parse()?); },
-            None => return Err(ParseTurn),
+            None => return Err(ParseError),
         }
 
         // parse the castling flags
@@ -177,25 +179,25 @@ impl Position {
                         'Q' => { pos.can_castle_queen_side(White, true); },
                         'k' => { pos.can_castle_king_side(Black, true); },
                         'q' => { pos.can_castle_queen_side(Black, true); },
-                        _ => return Err(ParseCastling),
+                        _ => return Err(ParseError),
                     }
                 }
             },
-            None => return Err(ParseCastling),
+            None => return Err(ParseError),
         }
 
         // parse en passant square
         match fields.next() {
             Some("-") => {},
             Some(ep_square) => { pos.en_passant_square(Some(ep_square.parse()?)); },
-            None => return Err(ParseEnPassant),
+            None => return Err(ParseError),
         }
 
         // parse half move clock, if present
         if let Some(plies) =  fields.next() {
             match plies.parse() {
                 Ok(plies) => { pos.draw_plies(plies); },
-                Err(_) => return Err(ParseHalfMoveClock),
+                Err(_) => return Err(ParseError),
             }
         }
 
@@ -203,7 +205,7 @@ impl Position {
         if let Some(move_num) =  fields.next() {
             match move_num.parse() {
                 Ok(move_num) => { pos.move_number(move_num); },
-                Err(_) => return Err(ParseMoveNumber),
+                Err(_) => return Err(ParseError),
             }
         }
 
@@ -385,7 +387,7 @@ impl Position {
     ///
     /// Note that this function does not validate if the move leaves the mover in check or if it
     /// involves castling through check. Use `Move::make()` to perform those validations.
-    pub fn move_from_str(&self, s: &str) -> Result<Move, ParseMoveError> {
+    pub fn move_from_str(&self, s: &str) -> Result<Move> {
         // TODO: handle "O-O" castling notation
         let mut builder = MoveBuilder::new();
         let mut chars = s.chars();
@@ -395,7 +397,7 @@ impl Position {
             c.to_string()
         } else {
             // empty string
-            return Err(ParseMoveError::ParseError);
+            return Err(Error::ParseError);
         };
 
         // promotion piece
@@ -417,7 +419,7 @@ impl Position {
                     c.to_string()
                 } else {
                     // missing destination
-                    return Err(ParseMoveError::ParseError);
+                    return Err(Error::ParseError);
                 };
             }
         }
@@ -430,7 +432,7 @@ impl Position {
             c.to_string()
         } else {
             // missing destination file
-            return Err(ParseMoveError::ParseError);
+            return Err(Error::ParseError);
         };
 
         let dest_file = File::from_str(&c)?;
@@ -464,13 +466,13 @@ impl Position {
                 next = chars.next_back();
             } else {
                 // cannot determine piece
-                return Err(ParseMoveError::ParseError);
+                return Err(Error::ParseError);
             }
         }
 
         if next.is_some() {
             // extra characters
-            return Err(ParseMoveError::ParseError);
+            return Err(Error::ParseError);
         }
 
         Ok(builder.validate(self)?)
@@ -569,10 +571,10 @@ impl fmt::Display for Position {
 }
 
 impl FromStr for Position {
-    type Err = ParseFenError;
+    type Err = Error;
 
     /// Parse a position from a FEN string
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         Position::from_fen_str(s)
     }
 }
@@ -605,20 +607,20 @@ mod tests {
     /// Tests for Position::from_fen_str()
     mod from_fen_str {
         use super::*;
-        use ParseFenError::*;
+        use Error::*;
 
-        // 1. empty string returns Err(Empty)
+        // 1. empty string returns Err(ParseError)
         #[test]
         fn empty_string_returns_error() {
-            assert_eq!(Position::from_fen_str(""), Err(Empty));
-            assert_eq!(Position::from_fen_str(" \t\r\n"), Err(Empty));
+            assert_eq!(Position::from_fen_str(""), Err(ParseError));
+            assert_eq!(Position::from_fen_str(" \t\r\n"), Err(ParseError));
         }
 
-        // 2. 0 or 9 in board string returns Err(ParseBoard)
+        // 2. 0 or 9 in board string returns Err(ParseError)
         #[test]
         fn invalid_empty_square_count_returns_error() {
-            assert_eq!(Position::from_fen_str("0K1k5/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/9/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
+            assert_eq!(Position::from_fen_str("0K1k5/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/9/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
         }
 
         // 3. 1 and 8 do not return an error (if used correctly)
@@ -627,36 +629,36 @@ mod tests {
             Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - - 0 1").expect("valid fen");
         }
 
-        // 4. A rank with more than 8 squares returns Err(ParseBoard)
+        // 4. A rank with more than 8 squares returns Err(ParseError)
         #[test]
         fn rank_too_long_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k6/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5b/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8B w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/b8 w - - 0 1"), Err(ParseBoard));
+            assert_eq!(Position::from_fen_str("K1k6/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5b/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8B w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/b8 w - - 0 1"), Err(ParseError));
         }
 
-        // 5. A rank with less than 8 squares returns Err(ParseBoard)
+        // 5. A rank with less than 8 squares returns Err(ParseError)
         #[test]
         fn rank_too_short_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k4/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k3b/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/6B w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/b6 w - - 0 1"), Err(ParseBoard));
+            assert_eq!(Position::from_fen_str("K1k4/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k3b/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/6B w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/b6 w - - 0 1"), Err(ParseError));
         }
 
         // 6. Too many ranks returns an error
         #[test]
         fn too_many_ranks_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8/7R w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8/7R w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
         }
 
         // 7. Too few ranks returns an error
         #[test]
         fn too_few_ranks_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/7Q w - - 0 1"), Err(ParseBoard));
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8 w - - 0 1"), Err(ParseBoard));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/7Q w - - 0 1"), Err(ParseError));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8 w - - 0 1"), Err(ParseError));
         }
 
         // 8. Pieces on files a and h do not return an error
@@ -667,10 +669,10 @@ mod tests {
                 .expect("valid fen");
         }
 
-        // 12. Missing turn field returns Err(ParseTurn)
+        // 12. Missing turn field returns Err(ParseError)
         #[test]
         fn missing_turn_field_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8"), Err(ParseTurn));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8"), Err(ParseError));
         }
 
         // 13. 'w' and 'b' set the turn correctly
@@ -682,22 +684,22 @@ mod tests {
                 .expect("valid fen").turn(), Color::Black);
         }
 
-        // 14. Anything other than 'w' and 'b' returns Err(ParseTurn)
+        // 14. Anything other than 'w' and 'b' returns Err(ParseError)
         #[test]
         fn invalid_turn_color_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 x - - 0 1"), Err(ParseTurn));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 x - - 0 1"), Err(ParseError));
         }
 
-        // 15. Missing castling flags field returns Err(ParseCastling)
+        // 15. Missing castling flags field returns Err(ParseError)
         #[test]
         fn missing_castling_flag_field_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w"), Err(ParseCastling));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w"), Err(ParseError));
         }
 
-        // 16. Invalid castling flags returns Err(ParseCastling)
+        // 16. Invalid castling flags returns Err(ParseError)
         #[test]
         fn invalid_castling_flag_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w x - 0 1"), Err(ParseCastling));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w x - 0 1"), Err(ParseError));
         }
 
         // 17. "-" castling flag returns leaves all castling flags empty
@@ -737,10 +739,10 @@ mod tests {
             assert_eq!(pos.castling_rights[Color::Black as usize], CASTLE_BOTH_SIDES);
         }
 
-        // 19. Missing en passant field returns Err(ParseEnPassant)
+        // 19. Missing en passant field returns Err(ParseError)
         #[test]
         fn missing_en_passant_field_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w -"), Err(ParseEnPassant));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w -"), Err(ParseError));
         }
 
         // 20. "-" in the en passant field sets `ep_square` to `None`
@@ -750,10 +752,10 @@ mod tests {
             assert_eq!(pos.ep_square, None);
         }
 
-        // 21. An en passant field that is not a square returns Err(ParseEnPassant)
+        // 21. An en passant field that is not a square returns Err(ParseError)
         #[test]
         fn bad_en_passant_square_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - x 0 1"), Err(ParseEnPassant));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - x 0 1"), Err(ParseError));
         }
 
         // 22. A valid en passant square sets `ep_square` to that square
@@ -774,7 +776,7 @@ mod tests {
         #[test]
         fn bad_halfmove_clock_returns_error() {
             assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - - x 1"),
-                Err(ParseHalfMoveClock));
+                Err(ParseError));
         }
 
         // 25. Integer half-move clock field sets the value
@@ -795,7 +797,7 @@ mod tests {
         #[test]
         fn bad_fullmove_number_returns_error() {
             assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - - 0 x"),
-                Err(ParseMoveNumber));
+                Err(ParseError));
         }
 
         // 28. Integer full-move number field sets the value
@@ -805,16 +807,16 @@ mod tests {
             assert_eq!(pos.move_num, 9999);
         }
 
-        // 29a. two kings on one side returns Err(KingCount)
+        // 29a. two kings on one side returns Err(InvalidKingCount)
         #[test]
         fn multiple_kings_returns_error() {
-            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/7K/8 w - - 0 1"), Err(KingCount));
+            assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/7K/8 w - - 0 1"), Err(InvalidKingCount));
         }
 
-        // 29. No kings on one side returns Err(KingCount)
+        // 29. No kings on one side returns Err(InvalidKingCount)
         #[test]
         fn missing_king_returns_error() {
-            assert_eq!(Position::from_fen_str("K7/8/8/8/8/8/8/8 w - - 0 1"), Err(KingCount));
+            assert_eq!(Position::from_fen_str("K7/8/8/8/8/8/8/8 w - - 0 1"), Err(InvalidKingCount));
         }
 
         // 30. Pawns on Rank 1 or 8 returns Err(InvalidPawnRank)
@@ -837,48 +839,48 @@ mod tests {
                 Err(KingCapturable));
         }
 
-        // 32. Piece in en passant square results in Err(EnPassantPawn)
+        // 32. Piece in en passant square results in Err(EnPassantSquareOccupied)
         #[test]
         fn en_passant_square_occupied_returns_error() {
             assert_eq!(Position::from_fen_str("K1k5/8/7p/7p/8/8/8/8 w - h6 0 1"),
-                Err(EnPassantPawn));
+                Err(EnPassantSquareOccupied));
         }
 
-        // 33. Missing en passant capture pawn results in Err(EnPassantPawn)
+        // 33. Missing en passant capture pawn results in Err(MissingEnPassantPawn)
         #[test]
         fn missing_en_passant_capture_pawn_returns_error() {
             assert_eq!(Position::from_fen_str("K1k5/8/8/8/8/8/8/8 w - h6 0 1"),
-                Err(EnPassantPawn));
+                Err(MissingEnPassantPawn));
         }
 
         // 34. For each player, if king is out of origin location with castling rights,
-        //      returns Err(InvalidCastling)
+        //      returns Err(InvalidCastlingFlags)
         #[test]
         fn castling_priviledges_when_king_has_moved_returns_error() {
             assert_eq!(Position::from_fen_str("2k5/8/8/8/8/8/7K/R6R w K - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("2k5/8/8/8/8/8/7K/R6R w Q - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("r6r/7k/8/8/8/8/8/2K5 w k - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("r6r/7k/8/8/8/8/8/2K5 w q - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
         }
 
         // 35. For each player, if the king-side rook is out of place with king-side castling
-        //      rights, returns Err(InvalidCastling)
+        //      rights, returns Err(InvalidCastlingFlags)
         // 36. For each player, if the queen-side rook is out of place with queen-side castling
-        //      rights, returns Err(InvalidCastling)
+        //      rights, returns Err(InvalidCastlingFlags)
         #[test]
         fn castling_priviledges_when_rook_has_moved_returns_error() {
             assert_eq!(Position::from_fen_str("2k5/8/8/8/8/8/8/4K3 w K - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("2k5/8/8/8/8/8/8/4K3 w Q - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("4k3/8/8/8/8/8/8/2K5 w k - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
             assert_eq!(Position::from_fen_str("4k3/8/8/8/8/8/8/2K5 w q - 0 1"),
-                Err(InvalidCastling));
+                Err(InvalidCastlingFlags));
         }
 
 

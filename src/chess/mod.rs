@@ -1,5 +1,7 @@
 //! The `chess` module implements the FIDE Laws of Chess.
 //
+//  Copyright 2019 Michael Leany
+//
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -10,7 +12,7 @@ use std::fmt;
 use std::mem;
 use std::str::FromStr;
 use std::convert::TryFrom;
-use error::*;
+pub use error::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Which side a piece or player is on, based on the color of the pieces for that side.
@@ -55,13 +57,13 @@ impl fmt::Display for Color {
 }
 
 impl FromStr for Color {
-    type Err = ParseColorError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "w" => Ok(Color::White),
             "b" => Ok(Color::Black),
-            _   => Err(ParseColorError),
+            _   => Err(Error::ParseError),
         }
     }
 }
@@ -73,13 +75,13 @@ impl Default for Color {
 }
 
 impl TryFrom<usize> for Color {
-    type Error = TryFromIntError;
+    type Error = Error;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> Result<Self> {
         if value < Self::COUNT {
             unsafe { Ok(mem::transmute::<u8, Color>(value as u8)) }
         } else {
-            Err(TryFromIntError)
+            Err(Error::TryFromIntError)
         }
     }
 }
@@ -122,9 +124,9 @@ impl fmt::Display for Piece {
 }
 
 impl FromStr for Piece {
-    type Err = ParsePieceError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "P"|"p" => Ok(Piece::Pawn),
             "N"|"n" => Ok(Piece::Knight),
@@ -132,7 +134,7 @@ impl FromStr for Piece {
             "R"|"r" => Ok(Piece::Rook),
             "Q"|"q" => Ok(Piece::Queen),
             "K"|"k" => Ok(Piece::King),
-            _       => Err(ParsePieceError),
+            _       => Err(Error::ParseError),
         }
     }
 }
@@ -144,13 +146,13 @@ impl Default for Piece {
 }
 
 impl TryFrom<usize> for Piece {
-    type Error = TryFromIntError;
+    type Error = Error;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> Result<Self> {
         if value < Self::COUNT {
             unsafe { Ok(mem::transmute::<u8, Piece>(value as u8)) }
         } else {
-            Err(TryFromIntError)
+            Err(Error::TryFromIntError)
         }
     }
 }
@@ -192,9 +194,9 @@ impl fmt::Display for File {
 }
 
 impl FromStr for File {
-    type Err = ParseFileError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "a"|"A" => Ok(File::A),
             "b"|"B" => Ok(File::B),
@@ -204,7 +206,7 @@ impl FromStr for File {
             "f"|"F" => Ok(File::F),
             "g"|"G" => Ok(File::G),
             "h"|"H" => Ok(File::H),
-            _       => Err(ParseFileError),
+            _       => Err(Error::ParseError),
         }
     }
 }
@@ -216,13 +218,13 @@ impl Default for File {
 }
 
 impl TryFrom<usize> for File {
-    type Error = TryFromIntError;
+    type Error = Error;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> Result<Self> {
         if value < Self::COUNT {
             unsafe { Ok(mem::transmute::<u8, File>(value as u8)) }
         } else {
-            Err(TryFromIntError)
+            Err(Error::TryFromIntError)
         }
     }
 }
@@ -264,9 +266,9 @@ impl fmt::Display for Rank {
 }
 
 impl FromStr for Rank {
-    type Err = ParseRankError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "1" => Ok(Rank::R1),
             "2" => Ok(Rank::R2),
@@ -276,7 +278,7 @@ impl FromStr for Rank {
             "6" => Ok(Rank::R6),
             "7" => Ok(Rank::R7),
             "8" => Ok(Rank::R8),
-            _       => Err(ParseRankError),
+            _       => Err(Error::ParseError),
         }
     }
 }
@@ -288,13 +290,13 @@ impl Default for Rank {
 }
 
 impl TryFrom<usize> for Rank {
-    type Error = TryFromIntError;
+    type Error = Error;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> Result<Self> {
         if value < Self::COUNT {
             unsafe { Ok(mem::transmute::<u8, Rank>(value as u8)) }
         } else {
-            Err(TryFromIntError)
+            Err(Error::TryFromIntError)
         }
     }
 }
@@ -348,14 +350,14 @@ impl fmt::Display for Square {
 }
 
 impl FromStr for Square {
-    type Err = ParseSquareError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         let c: Vec<_> = s.chars().collect();
         if c.len() == 2 {
             Ok(Square::from_coord(c[0].to_string().parse()?, c[1].to_string().parse()?))
         } else {
-            Err(ParseSquareError)
+            Err(Error::ParseError)
         }
     }
 }
@@ -367,13 +369,13 @@ impl Default for Square {
 }
 
 impl TryFrom<usize> for Square {
-    type Error = TryFromIntError;
+    type Error = Error;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> Result<Self> {
         if value < Self::COUNT {
             unsafe { Ok(mem::transmute::<u8, Square>(value as u8)) }
         } else {
-            Err(TryFromIntError)
+            Err(Error::TryFromIntError)
         }
     }
 }
@@ -395,7 +397,7 @@ pub use position::moves::{Moves, PromotionsAndCaptures};
 
 pub mod variations;
 
-pub mod error;
+mod error;
 
 #[cfg(test)]
 mod color_tests {

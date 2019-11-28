@@ -1,5 +1,7 @@
 //! Contains structures to represent and generate moves
 //
+//  Copyright 2019 Michael Leany
+//
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -131,7 +133,7 @@ impl<'a> Move<'a> {
         }
     }
     /// Make the move, returning the resulting position.
-    pub fn make(&self) -> Result<Position, MakeMoveError> {
+    pub fn make(&self) -> Result<Position> {
         let mut pos = self.pos.clone();
 
         // clear captured piece (including en passant)
@@ -201,7 +203,7 @@ impl<'a> Move<'a> {
 
             if pos.square_attacked_by(dest, !pos.turn()) {
                 // castling through check
-                return Err(MakeMoveError::CastlingThroughCheck);
+                return Err(Error::CastlingThroughCheck);
             }
 
             let mask = Bitboard::from(orig) | dest.into();
@@ -220,7 +222,7 @@ impl<'a> Move<'a> {
         };
         if king_attacked {
             // own king is under attack
-            return Err(MakeMoveError::SelfCheck);
+            return Err(Error::KingCapturable);
         }
 
         // update en passant square
@@ -871,7 +873,7 @@ impl<'a> MoveBuilder {
     ///
     /// Note that this function does not validate if the move leaves the mover in check or if it
     /// involves castling through check. Use `Move::make()` to perform those validations.
-    pub fn validate(&self, pos: &'a Position) -> Result<Move<'a>, ValidateMoveError> {
+    pub fn validate(&self, pos: &'a Position) -> Result<Move<'a>> {
         let mut move_type = MoveType::Standard;
 
         // Step 1: Disambiguation
@@ -879,7 +881,7 @@ impl<'a> MoveBuilder {
         let dest = if let Some(dest) = self.dest {
             dest
         } else {
-            return Err(ValidateMoveError::AmbiguousMove);
+            return Err(Error::AmbiguousMove);
         };
         if let (Some(file), Some(rank)) = (self.orig_file, self.orig_rank) {
             orig = Square::from_coord(file, rank)
@@ -916,7 +918,7 @@ impl<'a> MoveBuilder {
             let mask = mask & pos.occupied_by_piece(pos.turn(), piece) & attacks;
 
             if mask.len() != 1 {
-                return Err(ValidateMoveError::AmbiguousMove);
+                return Err(Error::AmbiguousMove);
             }
 
             orig = mask.peek().expect("INFALLIBLE")
@@ -926,11 +928,11 @@ impl<'a> MoveBuilder {
         let piece = match pos.piece_at(orig) {
             Some((color, piece)) => {
                 if self.piece.is_some() && self.piece != Some(piece) || color != pos.turn() {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
                 piece
             },
-            None => return Err(ValidateMoveError::IllegalMove),
+            None => return Err(Error::IllegalMove),
         };
 
         // Step 3: determine capture piece, if any, including en passant
@@ -939,7 +941,7 @@ impl<'a> MoveBuilder {
                 if color != pos.turn() {
                     Some(capt_pc)
                 } else {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
             },
             None => {
@@ -984,28 +986,28 @@ impl<'a> MoveBuilder {
                             _ => {},
                         }
                     },
-                    _ => return Err(ValidateMoveError::IllegalMove),
+                    _ => return Err(Error::IllegalMove),
                 }
 
             },
             Knight => {
                 if !knight_attacks(orig).contains(dest) {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
             },
             Bishop => {
                 if !bishop_attacks(orig, pos.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
             },
             Rook => {
                 if !rook_attacks(orig, pos.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
             },
             Queen => {
                 if !queen_attacks(orig, pos.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError::IllegalMove);
+                    return Err(Error::IllegalMove);
                 }
             },
             King => {
@@ -1016,7 +1018,7 @@ impl<'a> MoveBuilder {
                             .intersects(File::H.into()) {
                             move_type = MoveType::Castling;
                         } else {
-                            return Err(ValidateMoveError::IllegalMove);
+                            return Err(Error::IllegalMove);
                         }
                     },
                     (File::E, File::C) => {
@@ -1025,12 +1027,12 @@ impl<'a> MoveBuilder {
                             .intersects(File::H.into()) {
                             move_type = MoveType::Castling;
                         } else {
-                            return Err(ValidateMoveError::IllegalMove);
+                            return Err(Error::IllegalMove);
                         }
                     },
                     _ => {
                         if !king_attacks(orig).contains(dest) {
-                            return Err(ValidateMoveError::IllegalMove);
+                            return Err(Error::IllegalMove);
                         }
                     }
                 }
@@ -1039,7 +1041,7 @@ impl<'a> MoveBuilder {
 
         // Step 5: validate promotions
         if self.prom_pc.is_some() && !move_type.is_promotion() {
-            return Err(ValidateMoveError::IllegalMove);
+            return Err(Error::IllegalMove);
         }
 
         Ok(Move{

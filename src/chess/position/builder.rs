@@ -1,5 +1,7 @@
 //! Contains a builder for `Position`
 //
+//  Copyright 2019 Michael Leany
+//
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -85,8 +87,8 @@ impl PositionBuilder {
     }
 
     /// Validates legality and returns a `Position`
-    pub fn validate(&self) -> Result<Position, ValidatePositionError> {
-        use ValidatePositionError::*;
+    pub fn validate(&self) -> Result<Position> {
+        use Error::*;
 
         let mut pos = Position::empty_board();
 
@@ -118,7 +120,7 @@ impl PositionBuilder {
         for c in &[White, Black] {
             // Step 1: verify exactly one king per side
             if pos.occupied_by_piece(*c, King).len() != 1 {
-                return Err(KingCount);
+                return Err(InvalidKingCount);
             }
             // Step 2: no pawns on ranks 1 and 8
             if pos.occupied_by_piece(*c, Pawn)
@@ -133,11 +135,11 @@ impl PositionBuilder {
         // Step 4: if there is an EP square, it must be empty and there must be a pawn to capture
         if let Some(ep_square) = pos.ep_square {
             if pos.piece_at(ep_square).is_some() {
-                return Err(EnPassantPawn);
+                return Err(EnPassantSquareOccupied);
             }
             let forward = if pos.turn == White { 1 } else { -1 };
             if !pos.occupied_by_piece(!pos.turn, Pawn).shift_y(forward).contains(ep_square) {
-                return Err(EnPassantPawn);
+                return Err(MissingEnPassantPawn);
             }
         }
         // Step 5: if castling rights exist, king and rook must be in the correct squares
@@ -146,15 +148,15 @@ impl PositionBuilder {
                 let r = if *c == White { Rank::R1 } else { Rank::R8 };
 
                 if !pos.occupied_by_piece(*c, King).contains(Square::from_coord(File::E, r)) {
-                    return Err(InvalidCastling);
+                    return Err(InvalidCastlingFlags);
                 }
                 if pos.has_queen_side_castling_rights(*c)
                     && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::A, r)) {
-                    return Err(InvalidCastling);
+                    return Err(InvalidCastlingFlags);
                 }
                 if pos.has_king_side_castling_rights(*c)
                     && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::H, r)) {
-                    return Err(InvalidCastling);
+                    return Err(InvalidCastlingFlags);
                 }
             }
         }
