@@ -17,7 +17,6 @@ use Piece::*;
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A representation of the arrangement of pieces on the board at a given point in the game, as well
 /// as castling availability and en passant legality.
-#[allow(missing_copy_implementations,)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Position {
     zobrist: Zobrist,
@@ -117,7 +116,7 @@ impl Position {
     pub fn from_fen_str(s: &str) -> Result<Position, ParseFenError> {
         use ParseFenError::*;
 
-        let mut pos = Position::empty_board();
+        let mut pos = PositionBuilder::new();
         let mut fields = s.trim().split_whitespace();
 
         // parse the board
@@ -149,9 +148,7 @@ impl Position {
                         let piece: Piece = c.to_string().parse()?;
 
                         // set the `sq` as occupied
-                        pos.occ_squares.insert(sq);
-                        pos.occ_by_color[color as usize].insert(sq);
-                        pos.occ_by_piece[color as usize][piece as usize].insert(sq);
+                        pos.piece(color, piece, sq);
 
                         f += 1;
                     }
@@ -166,7 +163,7 @@ impl Position {
 
         // parse the turn
         match fields.next() {
-            Some(turn) => pos.turn = turn.parse()?,
+            Some(turn) => { pos.turn(turn.parse()?); },
             None => return Err(ParseTurn),
         }
 
@@ -176,10 +173,10 @@ impl Position {
             Some(castling_flags) => {
                 for c in castling_flags.chars() {
                     match c {
-                        'K' => pos.castling_rights[White as usize] |= CASTLE_KING_SIDE,
-                        'Q' => pos.castling_rights[White as usize] |= CASTLE_QUEEN_SIDE,
-                        'k' => pos.castling_rights[Black as usize] |= CASTLE_KING_SIDE,
-                        'q' => pos.castling_rights[Black as usize] |= CASTLE_QUEEN_SIDE,
+                        'K' => { pos.can_castle_king_side(White, true); },
+                        'Q' => { pos.can_castle_queen_side(White, true); },
+                        'k' => { pos.can_castle_king_side(Black, true); },
+                        'q' => { pos.can_castle_queen_side(Black, true); },
                         _ => return Err(ParseCastling),
                     }
                 }
@@ -190,14 +187,14 @@ impl Position {
         // parse en passant square
         match fields.next() {
             Some("-") => {},
-            Some(ep_square) => pos.ep_square = Some(ep_square.parse()?),
+            Some(ep_square) => { pos.en_passant_square(Some(ep_square.parse()?)); },
             None => return Err(ParseEnPassant),
         }
 
         // parse half move clock, if present
         if let Some(plies) =  fields.next() {
             match plies.parse() {
-                Ok(plies) => pos.draw_plies = plies,
+                Ok(plies) => { pos.draw_plies(plies); },
                 Err(_) => return Err(ParseHalfMoveClock),
             }
         }
@@ -205,60 +202,12 @@ impl Position {
         // parse move number, if present
         if let Some(move_num) =  fields.next() {
             match move_num.parse() {
-                Ok(move_num) => pos.move_num = move_num,
+                Ok(move_num) => { pos.move_number(move_num); },
                 Err(_) => return Err(ParseMoveNumber),
             }
         }
 
-        // validate position legality
-        for c in &[White, Black] {
-            // Step 1: verify exactly one king per side
-            if pos.occupied_by_piece(*c, King).len() != 1 {
-                return Err(KingCount);
-            }
-            // Step 2: no pawns on ranks 1 and 8
-            if pos.occupied_by_piece(*c, Pawn)
-                .intersects(Bitboard::from(Rank::R1) | Rank::R8.into()) {
-                return Err(InvalidPawnRank);
-            }
-        }
-        // Step 3: opponent's king is not attacked
-        if pos.square_attacked_by(pos.king_location(!pos.turn), pos.turn) {
-            return Err(KingCapturable);
-        }
-        // Step 4: if there is an EP square, it must be empty and there must be a pawn to capture
-        if let Some(ep_square) = pos.ep_square {
-            if pos.piece_at(ep_square).is_some() {
-                return Err(EnPassantPawn);
-            }
-            let forward = if pos.turn == White { 1 } else { -1 };
-            if !pos.occupied_by_piece(!pos.turn, Pawn).shift_y(forward).contains(ep_square) {
-                return Err(EnPassantPawn);
-            }
-        }
-        // Step 5: if castling rights exist, king and rook must be in the correct squares
-        for c in &[White, Black] {
-            if pos.has_castling_rights(*c) {
-                let r = if *c == White { Rank::R1 } else { Rank::R8 };
-
-                if !pos.occupied_by_piece(*c, King).contains(Square::from_coord(File::E, r)) {
-                    return Err(InvalidCastling);
-                }
-                if pos.has_queen_side_castling_rights(*c)
-                    && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::A, r)) {
-                    return Err(InvalidCastling);
-                }
-                if pos.has_king_side_castling_rights(*c)
-                    && !pos.occupied_by_piece(*c, Rook).contains(Square::from_coord(File::H, r)) {
-                    return Err(InvalidCastling);
-                }
-            }
-        }
-
-        pos.in_check = pos.square_attacked_by(pos.king_location(pos.turn), !pos.turn);
-        pos.calc_zobrist();
-
-        Ok(pos)
+        Ok(pos.validate()?)
     }
 
     /// Converts the position to a FEN string
@@ -431,165 +380,14 @@ impl Position {
         self.zobrist
     }
 
-    /// Validates the pseudo-legality of the move from `orig` to `dest`, with the given move type,
-    /// and returns a `Move` tied to this position.
-    ///
-    /// Note that this function does not validate if the move leaves the mover in check or if it
-    /// involves castling through check. Use `Move::make()` to perform those validations.
-    pub fn validate_move(&self,
-        orig: Square,
-        dest: Square,
-        move_type: MoveType,
-    ) -> Result<Move, ValidateMoveError> {
-        let mut valid_move_type = MoveType::Standard;
-
-        // Step 1: determine move piece and validate piece of correct color at orig
-        let piece = match self.piece_at(orig) {
-            Some((c, p)) => {
-                if c != self.turn {
-                    return Err(ValidateMoveError);
-                }
-                p
-            },
-            None => return Err(ValidateMoveError),
-        };
-
-        // Step 2: determine capture piece, if any, including en passant
-        let capt_pc = match self.piece_at(dest) {
-            Some((c, p)) => {
-                if c != self.turn {
-                    Some(p)
-                } else {
-                    return Err(ValidateMoveError);
-                }
-            },
-            None => {
-                if let Some(ep_square) = self.ep_square {
-                    if dest == ep_square && piece == Pawn {
-                        valid_move_type = MoveType::EnPassant;
-                        Some(Pawn)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            },
-        };
-
-        // Step 3: validate piece movement
-        match piece {
-            Pawn => {
-                let (forward, initial) = if self.turn == White {
-                    (1, Rank::R2)
-                } else {
-                    (-1, Rank::R7)
-                };
-
-                if capt_pc.is_some() {
-                    // captures
-                    let pc_board = Bitboard::from(orig);
-                    let attacks = pc_board.shift_xy(-1, forward) | pc_board.shift_xy(1, forward);
-                    if !attacks.contains(dest) {
-                        return Err(ValidateMoveError);
-                    }
-                }
-                else {
-                    // advancement
-                    if orig.file() != dest.file() {
-                        return Err(ValidateMoveError);
-                    }
-                    let rank_diff = (dest.rank() as i8 - orig.rank() as i8) * forward;
-                    match rank_diff {
-                        2 if orig.rank() == initial => valid_move_type = MoveType::Advance2,
-                        1 => {},
-                        _ => return Err(ValidateMoveError),
-                    }
-                }
-
-                // promotions
-                match dest.rank() {
-                    Rank::R1 | Rank::R8 => {
-                        if let MoveType::Promotion(_) = move_type {
-                            valid_move_type = move_type;
-                        } else {
-                            valid_move_type = MoveType::Promotion(Promotion::ToQueen);
-                        }
-                    },
-                    _ => {},
-                }
-            },
-            Knight => {
-                if !knight_attacks(orig).contains(dest) {
-                    return Err(ValidateMoveError);
-                }
-            },
-            Bishop => {
-                if !bishop_attacks(orig, self.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError);
-                }
-            },
-            Rook => {
-                if !rook_attacks(orig, self.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError);
-                }
-            },
-            Queen => {
-                if !queen_attacks(orig, self.occ_squares).contains(dest) {
-                    return Err(ValidateMoveError);
-                }
-            },
-            King => {
-                match (orig.file(), dest.file()) {
-                    (File::E, File::G) => {
-                        if self.has_king_side_castling_rights(self.turn)
-                            && rank_attacks(orig, self.occ_squares)
-                            .intersects(File::H.into()) {
-                            valid_move_type = MoveType::Castling;
-                        } else {
-                            return Err(ValidateMoveError);
-                        }
-                    },
-                    (File::E, File::C) => {
-                        if self.has_queen_side_castling_rights(self.turn)
-                            && rank_attacks(orig, self.occ_squares)
-                            .intersects(File::H.into()) {
-                            valid_move_type = MoveType::Castling;
-                        } else {
-                            return Err(ValidateMoveError);
-                        }
-                    },
-                    _ => {
-                        if !king_attacks(orig).contains(dest) {
-                            return Err(ValidateMoveError);
-                        }
-                    }
-                }
-            },
-        }
-
-        // Step 4: validate move type (allowing Standard to be used as unknown)
-        if move_type != valid_move_type && move_type != MoveType::Standard {
-            return Err(ValidateMoveError);
-        }
-
-        Ok(Move{
-            pos: self,
-            piece,
-            orig,
-            dest,
-            capt_pc,
-            move_type: valid_move_type,
-        })
-    }
-
     /// Parses a move from a string, validates the pseudo-legality of the move, and returns a `Move`
     /// tied to this position.
     ///
     /// Note that this function does not validate if the move leaves the mover in check or if it
     /// involves castling through check. Use `Move::make()` to perform those validations.
     pub fn move_from_str(&self, s: &str) -> Result<Move, ParseMoveError> {
-        // [nbrqkNBRQK]?[a-h]?[1-8]?[-x]?[a-h][1-8]=?[nbrqkNBRQK]?
+        // TODO: handle "O-O" castling notation
+        let mut builder = MoveBuilder::new();
         let mut chars = s.chars();
 
         let mut next =  chars.next_back();
@@ -601,15 +399,17 @@ impl Position {
         };
 
         // promotion piece
-        let move_type = match c.as_str() {
-            "Q" | "q" => MoveType::Promotion(Promotion::ToQueen),
-            "R" | "r" => MoveType::Promotion(Promotion::ToRook),
-            "B" | "b" => MoveType::Promotion(Promotion::ToBishop),
-            "N" | "n" => MoveType::Promotion(Promotion::ToKnight),
-            _ => MoveType::Standard, // let validate move determine move type
+        let prom_pc = match c.as_str() {
+            "Q" | "q" => Some(Promotion::ToQueen),
+            "R" | "r" => Some(Promotion::ToRook),
+            "B" | "b" => Some(Promotion::ToBishop),
+            "N" | "n" => Some(Promotion::ToKnight),
+            _ => None, // let validate move determine move type
         };
 
-        if let MoveType::Promotion(_) = move_type {
+        if prom_pc.is_some() {
+            builder.promotion(prom_pc);
+
             next = chars.next_back();
             if next == Some('=') {
                 next = chars.next_back();
@@ -641,98 +441,39 @@ impl Position {
         }
 
         let dest = Square::from_coord(dest_file, dest_rank);
+        builder.destination(dest);
 
         // origin
-        let orig_rank = if let Some(c) = next {
+        if let Some(c) = next {
             if let Ok(rank) = Rank::from_str(&c.to_string()) {
+                builder.origin_rank(rank);
                 next = chars.next_back();
-                Some(rank)
-            } else {
-                None
             }
-        } else {
-            None
-        };
-
-        let orig_file = if let Some(c) = next {
+        }
+        if let Some(c) = next {
             if let Ok(file) = File::from_str(&c.to_string()) {
+                builder.origin_file(file);
                 next = chars.next_back();
-                Some(file)
-            } else {
-                None
             }
-        } else {
-            None
-        };
+        }
 
         // piece
-        let piece = if let Some(c) = next {
-            if let Ok(pc) = Piece::from_str(&c.to_string()) {
+        if let Some(c) = next {
+            if let Ok(piece) = Piece::from_str(&c.to_string()) {
+                builder.piece(piece);
                 next = chars.next_back();
-                Some(pc)
             } else {
                 // cannot determine piece
                 return Err(ParseMoveError::ParseError);
             }
-        } else {
-            None
-        };
+        }
 
         if next.is_some() {
             // extra characters
             return Err(ParseMoveError::ParseError);
         }
 
-        // disambiguation
-        let orig;
-        if let (Some(file), Some(rank)) = (orig_file, orig_rank) {
-            orig = Square::from_coord(file, rank)
-        } else {
-            let mask: Bitboard = match (orig_file, orig_rank) {
-                (Some(file), None) => file.into(),
-                (None, Some(rank)) => rank.into(),
-                _ => !Bitboard::new(),
-            };
-
-            let piece = if let Some(piece) = piece {
-                piece
-            } else {
-                Pawn
-            };
-
-            let mask = mask & self.occupied_by_piece(self.turn, piece) & match piece {
-                King => { king_attacks(dest) },
-                Queen => { queen_attacks(dest, self.occ_squares) },
-                Rook => { rook_attacks(dest, self.occ_squares) },
-                Bishop => { bishop_attacks(dest, self.occ_squares) },
-                Knight => { knight_attacks(dest) },
-                Pawn => {
-                    let forward = if self.turn == White { 1 } else { -1 };
-                    let rank_mask = Bitboard::from(dest_rank).shift_y(-forward);
-                    if let Some(file) = orig_file {
-                        rank_mask & file.into()
-                    } else {
-                        rank_mask & dest_file.into()
-                    }
-                },
-            };
-
-            if mask.len() != 1 {
-                // ambiguous
-                return Err(ParseMoveError::AmbiguousMove);
-            }
-
-            orig = mask.peek().expect("INFALLIBLE")
-        };
-
-        if let Some(piece) = piece {
-            if self.piece_at(orig) != Some((self.turn, piece)) {
-                // piece not at orig
-                return Err(ParseMoveError::IllegalMove);
-            }
-        }
-
-        Ok(self.validate_move(orig, dest, move_type)?)
+        Ok(builder.validate(self)?)
     }
 
     /// Returns an iterator over valid (pseudo-legal) moves from this position.
@@ -838,6 +579,7 @@ impl FromStr for Position {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 pub mod zobrist;
+pub mod builder;
 pub mod moves;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

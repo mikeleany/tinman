@@ -128,8 +128,11 @@ impl From<TryFromIntError> for ParseMoveError {
 }
 
 impl From<ValidateMoveError> for ParseMoveError {
-    fn from(_: ValidateMoveError) -> Self {
-        ParseMoveError::IllegalMove
+    fn from(err: ValidateMoveError) -> Self {
+        match err {
+            ValidateMoveError::AmbiguousMove => ParseMoveError::AmbiguousMove,
+            ValidateMoveError::IllegalMove => ParseMoveError::IllegalMove,
+        }
     }
 }
 
@@ -204,6 +207,50 @@ impl From<ParseSquareError> for ParseFenError {
     }
 }
 
+impl From<ValidatePositionError> for ParseFenError {
+    fn from(err: ValidatePositionError) -> Self {
+        match err {
+            ValidatePositionError::KingCount => ParseFenError::KingCount,
+            ValidatePositionError::KingCapturable => ParseFenError::KingCapturable,
+            ValidatePositionError::InvalidPawnRank => ParseFenError::InvalidPawnRank,
+            ValidatePositionError::InvalidCastling => ParseFenError::InvalidCastling,
+            ValidatePositionError::EnPassantPawn => ParseFenError::EnPassantPawn,
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// An error that can be returned when validating a position
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ValidatePositionError {
+    /// Missing king or multiple kings of the same color
+    KingCount,
+    /// Player can capture opponents king
+    KingCapturable,
+    /// Pawn on first or last rank
+    InvalidPawnRank,
+    /// Castling flags aren't valid for this position
+    InvalidCastling,
+    /// En-passant square without capturable pawn
+    EnPassantPawn,
+}
+
+impl fmt::Display for ValidatePositionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ValidatePositionError::KingCount => "missing king or multiple kings of the same color",
+            ValidatePositionError::KingCapturable => "player can capture opponents king",
+            ValidatePositionError::InvalidPawnRank => "pawn on first or last rank",
+            ValidatePositionError::InvalidCastling => "castling flags aren't valid for this position",
+            ValidatePositionError::EnPassantPawn => "en-passant square without capturable pawn",
+        };
+
+        s.fmt(f)
+    }
+}
+
+impl Error for ValidatePositionError { }
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An error in converting an integer to an another type
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -220,11 +267,19 @@ impl Error for TryFromIntError { }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An error in validating a move
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ValidateMoveError;
+pub enum ValidateMoveError {
+    /// Ambiguous move
+    AmbiguousMove,
+    /// Illegal move
+    IllegalMove,
+}
 
 impl fmt::Display for ValidateMoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        "illegal move".fmt(f)
+        match self {
+            ValidateMoveError::AmbiguousMove => "ambiguous move",
+            ValidateMoveError::IllegalMove => "illegal move",
+        }.fmt(f)
     }
 }
 

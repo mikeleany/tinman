@@ -26,6 +26,17 @@ pub enum MoveType {
     Promotion(Promotion),
 }
 
+impl MoveType {
+    /// Returns `true` if the `MoveType` is a promotion.
+    pub fn is_promotion(self) -> bool {
+        if let MoveType::Promotion(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl Default for MoveType {
     fn default() -> Self {
         MoveType::Standard
@@ -773,6 +784,274 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
 }
 
 impl<'a> FusedIterator for PromotionsAndCaptures<'a> { }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// A builder for `Move`
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MoveBuilder {
+    piece: Option<Piece>,
+    orig_file: Option<File>,
+    orig_rank: Option<Rank>,
+    dest: Option<Square>,
+    prom_pc: Option<Promotion>,
+}
+
+impl<'a> MoveBuilder {
+    /// Creates a new MoveBuilder
+    pub fn new() -> Self {
+        MoveBuilder {
+            piece: None,
+            orig_file: None,
+            orig_rank: None,
+            dest: None,
+            prom_pc: None,
+        }
+    }
+
+    /// Sets the piece
+    pub fn piece(&mut self, piece: Piece) -> &Self {
+        self.piece = Some(piece);
+        self
+    }
+
+    /// Sets the origin
+    pub fn origin(&mut self, orig: Square) -> &Self {
+        self.orig_file = Some(orig.file());
+        self.orig_rank = Some(orig.rank());
+        self
+    }
+
+    /// Sets the origin file
+    pub fn origin_file(&mut self, file: File) -> &Self {
+        self.orig_file = Some(file);
+        self
+    }
+
+    /// Sets the origin rank
+    pub fn origin_rank(&mut self, rank: Rank) -> &Self {
+        self.orig_rank = Some(rank);
+        self
+    }
+
+    /// Sets the destination
+    pub fn destination(&mut self, dest: Square) -> &Self {
+        self.dest = Some(dest);
+        self
+    }
+
+    /// Sets or clears the promotion piece
+    pub fn promotion(&mut self, prom_pc: Option<Promotion>) -> &Self {
+        self.prom_pc = prom_pc;
+        self
+    }
+
+    /// Sets this as a king-side castling move for `turn`
+    pub fn castle_king_side(&mut self, turn: Color) -> &Self {
+        let rank = if turn == White { Rank::R1 } else { Rank::R8 };
+        self.piece = Some(King);
+        self.orig_file = Some(File::E);
+        self.orig_rank = Some(rank);
+        self.dest = Some(Square::from_coord(File::G, rank));
+        self.prom_pc = None;
+        self
+    }
+
+    /// Sets this as a queen-side castling move for `turn`
+    pub fn castle_queen_side(&mut self, turn: Color) -> &Self {
+        let rank = if turn == White { Rank::R1 } else { Rank::R8 };
+        self.piece = Some(King);
+        self.orig_file = Some(File::E);
+        self.orig_rank = Some(rank);
+        self.dest = Some(Square::from_coord(File::C, rank));
+        self.prom_pc = None;
+        self
+    }
+
+    /// Validates the pseudo-legality of the move, and returns a `Move` tied to `pos`
+    ///
+    /// Note that this function does not validate if the move leaves the mover in check or if it
+    /// involves castling through check. Use `Move::make()` to perform those validations.
+    pub fn validate(&self, pos: &'a Position) -> Result<Move<'a>, ValidateMoveError> {
+        let mut move_type = MoveType::Standard;
+
+        // Step 1: Disambiguation
+        let orig;
+        let dest = if let Some(dest) = self.dest {
+            dest
+        } else {
+            return Err(ValidateMoveError::AmbiguousMove);
+        };
+        if let (Some(file), Some(rank)) = (self.orig_file, self.orig_rank) {
+            orig = Square::from_coord(file, rank)
+        } else {
+            let mask: Bitboard = match (self.orig_file, self.orig_rank) {
+                (Some(file), None) => file.into(),
+                (None, Some(rank)) => rank.into(),
+                _ => !Bitboard::new(),
+            };
+
+            let piece = if let Some(piece) = self.piece {
+                piece
+            } else {
+                Pawn
+            };
+
+            let attacks;
+            match piece {
+                King => { attacks = king_attacks(dest); },
+                Queen => { attacks = queen_attacks(dest, pos.occ_squares); },
+                Rook => { attacks = rook_attacks(dest, pos.occ_squares); },
+                Bishop => { attacks = bishop_attacks(dest, pos.occ_squares); },
+                Knight => { attacks = knight_attacks(dest); },
+                Pawn => {
+                    let forward = if pos.turn() == White { 1 } else { -1 };
+                    let rank_mask = Bitboard::from(dest.rank()).shift_y(-forward);
+                    if let Some(file) = self.orig_file {
+                        attacks = rank_mask & file.into();
+                    } else {
+                        attacks = rank_mask & dest.file().into();
+                    }
+                },
+            };
+            let mask = mask & pos.occupied_by_piece(pos.turn(), piece) & attacks;
+
+            if mask.len() != 1 {
+                return Err(ValidateMoveError::AmbiguousMove);
+            }
+
+            orig = mask.peek().expect("INFALLIBLE")
+        }
+
+        // Step 2: determine and validate move piece
+        let piece = match pos.piece_at(orig) {
+            Some((color, piece)) => {
+                if self.piece.is_some() && self.piece != Some(piece) || color != pos.turn() {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+                piece
+            },
+            None => return Err(ValidateMoveError::IllegalMove),
+        };
+
+        // Step 3: determine capture piece, if any, including en passant
+        let capt_pc = match pos.piece_at(dest) {
+            Some((color, capt_pc)) => {
+                if color != pos.turn() {
+                    Some(capt_pc)
+                } else {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+            },
+            None => {
+                if let Some(ep_square) = pos.ep_square {
+                    if dest == ep_square && piece == Pawn {
+                        move_type = MoveType::EnPassant;
+                        Some(Pawn)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            },
+        };
+
+        // Step 4: validate piece movement
+        match piece {
+            Pawn => {
+                let (forward, initial) = if pos.turn() == White {
+                    (1, Rank::R2)
+                } else {
+                    (-1, Rank::R7)
+                };
+
+                let rank_diff = (dest.rank() as i8 - orig.rank() as i8) * forward;
+                let file_diff = dest.file() as i8 - orig.file() as i8;
+                let file_diff = file_diff * file_diff;
+
+                match (file_diff, rank_diff, capt_pc) {
+                    (0, 2, None) if orig.rank() == initial => move_type = MoveType::Advance2,
+                    (0, 1, None) | (1, 1, Some(_)) => {
+                        // check for promotions
+                        match dest.rank() {
+                            Rank::R1 | Rank::R8 => {
+                                if let Some(prom_pc) = self.prom_pc {
+                                    move_type = MoveType::Promotion(prom_pc);
+                                } else {
+                                    move_type = MoveType::Promotion(Promotion::ToQueen);
+                                }
+                            },
+                            _ => {},
+                        }
+                    },
+                    _ => return Err(ValidateMoveError::IllegalMove),
+                }
+
+            },
+            Knight => {
+                if !knight_attacks(orig).contains(dest) {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+            },
+            Bishop => {
+                if !bishop_attacks(orig, pos.occ_squares).contains(dest) {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+            },
+            Rook => {
+                if !rook_attacks(orig, pos.occ_squares).contains(dest) {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+            },
+            Queen => {
+                if !queen_attacks(orig, pos.occ_squares).contains(dest) {
+                    return Err(ValidateMoveError::IllegalMove);
+                }
+            },
+            King => {
+                match (orig.file(), dest.file()) {
+                    (File::E, File::G) => {
+                        if pos.has_king_side_castling_rights(pos.turn())
+                            && rank_attacks(orig, pos.occ_squares)
+                            .intersects(File::H.into()) {
+                            move_type = MoveType::Castling;
+                        } else {
+                            return Err(ValidateMoveError::IllegalMove);
+                        }
+                    },
+                    (File::E, File::C) => {
+                        if pos.has_queen_side_castling_rights(pos.turn())
+                            && rank_attacks(orig, pos.occ_squares)
+                            .intersects(File::H.into()) {
+                            move_type = MoveType::Castling;
+                        } else {
+                            return Err(ValidateMoveError::IllegalMove);
+                        }
+                    },
+                    _ => {
+                        if !king_attacks(orig).contains(dest) {
+                            return Err(ValidateMoveError::IllegalMove);
+                        }
+                    }
+                }
+            },
+        }
+
+        // Step 5: validate promotions
+        if self.prom_pc.is_some() && !move_type.is_promotion() {
+            return Err(ValidateMoveError::IllegalMove);
+        }
+
+        Ok(Move{
+            pos,
+            piece,
+            orig,
+            dest,
+            capt_pc,
+            move_type,
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {

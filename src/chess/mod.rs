@@ -388,8 +388,9 @@ impl From<Square> for usize {
 pub mod bitboard;
 mod position;
 pub use position::Position;
+pub use position::builder::PositionBuilder;
 pub use position::zobrist::Zobrist;
-pub use position::moves::{Move, MoveType, Promotion};
+pub use position::moves::{Move, MoveType, Promotion, MoveBuilder};
 pub use position::moves::{Moves, PromotionsAndCaptures};
 
 pub mod variations;
