@@ -424,8 +424,29 @@ const FILE_ATTACKS: [[Bitboard; 64]; Rank::COUNT] = [
     ],
 ];
 
-/// Computes rook-like attacks along the rank of `sq` based on the occupied squares
+/// Computes sliding attacks along the rank of `sq` based on the occupied squares
 /// given by `occ`
+///
+/// This function is similar to [`rook_attacks`](fn.rook_attacks.html), but only computes attacks
+/// along a single rank. This function is useful for determining if the space is clear between the
+/// king and a rook as required for castling.
+///
+/// ```rust
+/// use tinman::chess::Square;
+/// use tinman::chess::bitboard::{Bitboard, rank_attacks};
+///
+/// // squares occupied by white rooks
+/// let rooks = Bitboard::from(Square::A1) | Square::H1.into();
+/// // occupied squares (those on the first rank, anyway)
+/// let occ = rooks | Square::D1.into() | Square::E1.into();
+/// // rooks with no pieces between them and the king on e1
+/// let mut visible_rooks = rank_attacks(Square::E1, occ) & rooks;
+/// assert_eq!(visible_rooks.pop(), Some(Square::H1));
+/// assert_eq!(visible_rooks.pop(), None);
+/// ```
+///
+/// See also [Sliding Attacks (Bishops, Rooks and
+/// Queens)](index.html#sliding-attacks-bishops-rooks-and-queens).
 pub fn rank_attacks(sq: Square, occ: Bitboard) -> Bitboard {
     let sq_mask = Bitboard::from(sq).0;
     let rank_mask = Bitboard::from(sq.rank()).0;
@@ -439,6 +460,10 @@ pub fn rank_attacks(sq: Square, occ: Bitboard) -> Bitboard {
 }
 
 /// Computes knight-like attacks to or from `sq`
+///
+/// See the crate-level documentation for more information about
+/// [this function](index.html#direct-attacks-knights-and-kings) and
+/// [other attack functions](index.html#moves-and-attacks).
 #[inline]
 pub fn knight_attacks(sq: Square) -> Bitboard {
     KNIGHT_ATTACKS[sq as usize]
@@ -446,6 +471,10 @@ pub fn knight_attacks(sq: Square) -> Bitboard {
 
 /// Computes bishop-like attacks to or from `sq` based on the occupied squares
 /// given by `occ`
+///
+/// See the crate-level documentation for more information about
+/// [this function](index.html#sliding-attacks-bishops-rooks-and-queens) and
+/// [other attack functions](index.html#moves-and-attacks).
 pub fn bishop_attacks(sq: Square, occ: Bitboard) -> Bitboard {
     let sq_mask = Bitboard::from(sq).0;
     let swapped = sq_mask.swap_bytes();
@@ -465,6 +494,10 @@ pub fn bishop_attacks(sq: Square, occ: Bitboard) -> Bitboard {
 
 /// Computes rook-like attacks to or from `sq` based on the occupied squares
 /// given by `occ`
+///
+/// See the crate-level documentation for more information about
+/// [this function](index.html#sliding-attacks-bishops-rooks-and-queens) and
+/// [other attack functions](index.html#moves-and-attacks).
 pub fn rook_attacks(sq: Square, occ: Bitboard) -> Bitboard {
     let file_att = FILE_ATTACKS[sq.rank() as usize]
         [((occ.0 >> (sq.file() as usize * Rank::COUNT + 1)) & 0o77) as usize].0
@@ -475,12 +508,20 @@ pub fn rook_attacks(sq: Square, occ: Bitboard) -> Bitboard {
 
 /// Computes queen-like attacks to or from square based on the occupied squares
 /// given by `occ`
+///
+/// See the crate-level documentation for more information about
+/// [this function](index.html#sliding-attacks-bishops-rooks-and-queens) and
+/// [other attack functions](index.html#moves-and-attacks).
 #[inline]
 pub fn queen_attacks(sq: Square, occ: Bitboard) -> Bitboard {
     rook_attacks(sq, occ) | bishop_attacks(sq, occ)
 }
 
 /// Computes king-like attacks to or from `sq`
+///
+/// See the crate-level documentation for more information about
+/// [this function](index.html#direct-attacks-knights-and-kings) and
+/// [other attack functions](index.html#moves-and-attacks).
 #[inline]
 pub fn king_attacks(sq: Square) -> Bitboard {
     KING_ATTACKS[sq as usize]

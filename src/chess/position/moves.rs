@@ -789,6 +789,65 @@ impl<'a> FusedIterator for PromotionsAndCaptures<'a> { }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A builder for `Move`
+///
+/// Below is how `MoveBuilder` might be used in combination with a hash.
+///
+/// ```rust
+/// use tinman::chess::{Square, Promotion};
+/// use tinman::chess::{Position, Move, MoveBuilder};
+/// use tinman::chess::Result;
+///
+/// struct HashMove {
+///     orig: Square,
+///     dest: Square,
+///     prom: Option<Promotion>,
+/// }
+///
+/// fn get_hash_move(pos: &Position) -> Result<Move> {
+///     let hash_move: HashMove = hash_entry(pos);
+///     MoveBuilder::new()
+///         .origin(hash_move.orig)
+///         .destination(hash_move.dest)
+///         .promotion(hash_move.prom)
+///         .validate(pos)
+/// }
+///
+/// # use tinman::chess::PositionBuilder;
+/// # use tinman::chess::{Color, Piece};
+/// #
+/// # fn hash_entry(pos: &Position) -> HashMove {
+/// #     match pos.piece_at(Square::A7) {
+/// #         Some((Color::White, Piece::Pawn)) =>
+/// #             HashMove { orig: Square::A7, dest: Square::A8, prom: Some(Promotion::ToQueen) },
+/// #         _ => HashMove { orig: Square::G1, dest: Square::F3, prom: None },
+/// #     }
+/// # }
+/// #
+/// # let pos = PositionBuilder::new()
+/// #     .piece(Color::White, Piece::King, Square::E1)
+/// #     .piece(Color::White, Piece::Pawn, Square::A7)
+/// #     .piece(Color::Black, Piece::King, Square::E8)
+/// #     .turn(Color::White)
+/// #     .validate()?;
+/// # get_hash_move(&pos)?;
+/// #
+/// # let pos = Position::new();
+/// # get_hash_move(&pos)?;
+/// #
+/// # Ok::<(), tinman::chess::Error>(())
+/// ```
+///
+/// `MoveBuilder` can also be used to parse a `Move` from a string.
+///
+/// ```rust
+/// use tinman::chess::{Position, MoveBuilder};
+///
+/// let pos = Position::new();
+/// let move_str = "Nf3"; // string would usually come from a user
+///
+/// let new_pos = move_str.parse::<MoveBuilder>()?.validate(&pos)?.make()?;
+/// # Ok::<(), tinman::chess::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MoveBuilder {
     piece: Option<Piece>,
@@ -796,6 +855,7 @@ pub struct MoveBuilder {
     orig_rank: Option<Rank>,
     dest: Option<Square>,
     prom_pc: Option<Promotion>,
+    castle_dest: Option<File>,
 }
 
 impl<'a> MoveBuilder {
@@ -807,64 +867,65 @@ impl<'a> MoveBuilder {
             orig_rank: None,
             dest: None,
             prom_pc: None,
+            castle_dest: None,
         }
     }
 
     /// Sets the piece
-    pub fn piece(&mut self, piece: Piece) -> &Self {
+    pub fn piece(&mut self, piece: Piece) -> &mut Self {
         self.piece = Some(piece);
         self
     }
 
     /// Sets the origin
-    pub fn origin(&mut self, orig: Square) -> &Self {
+    pub fn origin(&mut self, orig: Square) -> &mut Self {
         self.orig_file = Some(orig.file());
         self.orig_rank = Some(orig.rank());
         self
     }
 
     /// Sets the origin file
-    pub fn origin_file(&mut self, file: File) -> &Self {
+    pub fn origin_file(&mut self, file: File) -> &mut Self {
         self.orig_file = Some(file);
         self
     }
 
     /// Sets the origin rank
-    pub fn origin_rank(&mut self, rank: Rank) -> &Self {
+    pub fn origin_rank(&mut self, rank: Rank) -> &mut Self {
         self.orig_rank = Some(rank);
         self
     }
 
     /// Sets the destination
-    pub fn destination(&mut self, dest: Square) -> &Self {
+    pub fn destination(&mut self, dest: Square) -> &mut Self {
         self.dest = Some(dest);
         self
     }
 
     /// Sets or clears the promotion piece
-    pub fn promotion(&mut self, prom_pc: Option<Promotion>) -> &Self {
+    pub fn promotion(&mut self, prom_pc: Option<Promotion>) -> &mut Self {
         self.prom_pc = prom_pc;
         self
     }
 
     /// Sets this as a king-side castling move for `turn`
-    pub fn castle_king_side(&mut self, turn: Color) -> &Self {
-        let rank = if turn == White { Rank::R1 } else { Rank::R8 };
+    pub fn castle_king_side(&mut self) -> &mut Self {
         self.piece = Some(King);
         self.orig_file = Some(File::E);
-        self.orig_rank = Some(rank);
-        self.dest = Some(Square::from_coord(File::G, rank));
+        self.orig_rank = None;
+        self.dest = None;
+        self.castle_dest = Some(File::G);
         self.prom_pc = None;
         self
     }
 
     /// Sets this as a queen-side castling move for `turn`
-    pub fn castle_queen_side(&mut self, turn: Color) -> &Self {
-        let rank = if turn == White { Rank::R1 } else { Rank::R8 };
+    pub fn castle_queen_side(&mut self) -> &mut Self {
         self.piece = Some(King);
         self.orig_file = Some(File::E);
-        self.orig_rank = Some(rank);
-        self.dest = Some(Square::from_coord(File::C, rank));
+        self.orig_rank = None;
+        self.dest = None;
+        self.castle_dest = Some(File::C);
         self.prom_pc = None;
         self
     }
@@ -877,14 +938,20 @@ impl<'a> MoveBuilder {
         let mut move_type = MoveType::Standard;
 
         // Step 1: Disambiguation
-        let orig;
         let dest = if let Some(dest) = self.dest {
             dest
+        } else if let Some(dest_file) = self.castle_dest {
+            let rank = if pos.turn() == White { Rank::R1 } else { Rank::R8 };
+            Square::from_coord(dest_file, rank)
         } else {
             return Err(Error::AmbiguousMove);
         };
+
+        let orig;
         if let (Some(file), Some(rank)) = (self.orig_file, self.orig_rank) {
-            orig = Square::from_coord(file, rank)
+            orig = Square::from_coord(file, rank);
+        } else if let (Some(file), None) = (self.orig_file, self.dest) {
+            orig = Square::from_coord(file, dest.rank());
         } else {
             let mask: Bitboard = match (self.orig_file, self.orig_rank) {
                 (Some(file), None) => file.into(),
@@ -921,7 +988,7 @@ impl<'a> MoveBuilder {
                 return Err(Error::AmbiguousMove);
             }
 
-            orig = mask.peek().expect("INFALLIBLE")
+            orig = mask.peek().expect("INFALLIBLE");
         }
 
         // Step 2: determine and validate move piece
@@ -1052,6 +1119,114 @@ impl<'a> MoveBuilder {
             capt_pc,
             move_type,
         })
+    }
+}
+
+impl FromStr for MoveBuilder {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<MoveBuilder> {
+        let mut builder = MoveBuilder::new();
+
+        // handle PGN/SAN-style castling notation
+        match s {
+            "O-O" | "0-0" => {
+                builder.castle_king_side();
+                return Ok(builder);
+            },
+            "O-O-O" | "0-0-0" => {
+                builder.castle_queen_side();
+                return Ok(builder);
+            },
+            _ => {},
+        }
+
+        let mut chars = s.chars();
+
+        let mut next = chars.next_back();
+        let mut c = if let Some(c) = next {
+            c.to_string()
+        } else {
+            // empty string
+            return Err(Error::ParseError);
+        };
+
+        // promotion piece
+        let prom_pc = match c.as_str() {
+            "Q" | "q" => Some(Promotion::ToQueen),
+            "R" | "r" => Some(Promotion::ToRook),
+            "B" | "b" => Some(Promotion::ToBishop),
+            "N" | "n" => Some(Promotion::ToKnight),
+            _ => None, // let validate move determine move type
+        };
+
+        if prom_pc.is_some() {
+            builder.promotion(prom_pc);
+
+            next = chars.next_back();
+            if next == Some('=') {
+                next = chars.next_back();
+                c = if let Some(c) = next {
+                    c.to_string()
+                } else {
+                    // missing destination
+                    return Err(Error::ParseError);
+                };
+            }
+        }
+
+        // destination
+        let dest_rank = Rank::from_str(&c)?;
+
+        next =  chars.next_back();
+        c = if let Some(c) = next {
+            c.to_string()
+        } else {
+            // missing destination file
+            return Err(Error::ParseError);
+        };
+
+        let dest_file = File::from_str(&c)?;
+
+        next = chars.next_back();
+        if next == Some('-') || next == Some('x') {
+            next = chars.next_back();
+        }
+
+        let dest = Square::from_coord(dest_file, dest_rank);
+        builder.destination(dest);
+
+        // origin
+        if let Some(c) = next {
+            if let Ok(rank) = Rank::from_str(&c.to_string()) {
+                builder.origin_rank(rank);
+                next = chars.next_back();
+            }
+        }
+        if let Some(c) = next {
+            if let Ok(file) = File::from_str(&c.to_string()) {
+                builder.origin_file(file);
+                next = chars.next_back();
+            }
+        }
+
+        // piece
+        if let Some(c) = next {
+            if let Ok(piece) = Piece::from_str(&c.to_string()) {
+                builder.piece(piece);
+                next = chars.next_back();
+            } else {
+                // cannot determine piece
+                return Err(Error::ParseError);
+            }
+        }
+
+        if next.is_some() {
+            // extra characters
+            return Err(Error::ParseError);
+        }
+
+        Ok(builder)
     }
 }
 

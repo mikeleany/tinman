@@ -21,7 +21,7 @@ pub enum Error {
     AmbiguousMove,
     /// Illegal move
     IllegalMove,
-    /// Player can capture opponents king
+    /// Player can capture opponent's king
     KingCapturable,
     /// Castling through check
     CastlingThroughCheck,

@@ -1,4 +1,5 @@
-//! The `chess` module implements the FIDE Laws of Chess.
+//! The `chess` module implements the
+//! [FIDE Laws of Chess](https://www.fide.com/FIDE/handbook/LawsOfChess.pdf).
 //
 //  Copyright 2019 Michael Leany
 //
@@ -6,6 +7,27 @@
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
+//! # Overview
+//! For a computer to play chess, it first needs a way to represent the board and
+//! [`Piece`](enum.Piece.html)s. Together these make up the [`Position`](struct.Position.html). The
+//! board is composed of eight [`File`](enum.File.html)s and eight [`Rank`](enum.Rank.html)s, which
+//! form sixty-four [`Square`](enum.Square.html)s on the board, with the pieces each occupying one
+//! square. Each piece has a [`Color`](enum.Color.html) which indicates which player the piece
+//! belongs to. A `Position` can be built using a [`PositionBuilder`](struct.PositionBuilder.html).
+//!
+//! The next thing the computer needs to understand are [`Move`](struct.Move.html)s. Representing a
+//! position is a fairly simple matter, but moves are a bit more complicated. Each piece moves in a
+//! different way. To help simplify this, we use [bitboards](bitboard/index.html) to compute which
+//! pieces can move where.
+//!
+//! A specific `Move` can be built and validated using a [`MoveBuilder`](struct.MoveBuilder.html),
+//! which is great when you already have a specific move in mind. However, we need a way to
+//! generate lists of `Move`s. For that, we have two iterators: [`Moves`](struct.Moves.html) and
+//! [`PromotionsAndCaptures`](struct.PromotionsAndCaptures.html). `Moves` generates all valid moves
+//! from a `Position`. `PromotionsAndCaptures`, as its name suggests, generates just promotion and
+//! capture moves. The typical way to construct these iterators is with the methods
+//! [`Position::moves`](struct.Position.html#method.moves) and
+//! [`Position::promotions_and_captures()`](struct.Position.html#method.promotions_and_captures).
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::ops;
 use std::fmt;
@@ -16,6 +38,19 @@ pub use error::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Which side a piece or player is on, based on the color of the pieces for that side.
+///
+/// `Color` implements `Not`, so that we can do the following:
+///
+/// ```rust
+/// use tinman::chess::Color;
+/// 
+/// let mut turn = Color::White;
+/// turn = !turn;
+/// assert_eq!(turn, Color::Black);
+///
+/// turn = !turn;
+/// assert_eq!(turn, Color::White);
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub enum Color {
@@ -31,14 +66,6 @@ impl Color {
 impl ops::Not for Color {
     type Output = Color;
 
-    /// Returns the opposite color
-    ///
-    /// # Example
-    /// ```
-    /// use tinman::chess::Color;
-    /// assert_eq!(!Color::White, Color::Black);
-    /// assert_eq!(!Color::Black, Color::White);
-    /// ```
     fn not(self) -> Color {
         match self {
             Color::White => Color::Black,
@@ -309,6 +336,23 @@ impl From<Rank> for usize {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A specific square on the board, labeled using the `File` and `Rank` as coordinates.
+///
+/// In addition to using variants, a `Square` can be constructed from its `File` and `Rank`.
+///
+/// ```rust
+/// use tinman::chess::{Square, File, Rank};
+///
+/// assert_eq!(Square::from_coord(File::A, Rank::R1), Square::A1);
+/// ```
+///
+/// It can also be decomposed as follows:
+///
+/// ```rust
+/// use tinman::chess::{Square, File, Rank};
+///
+/// let square = Square::A1;
+/// assert_eq!((square.file(), square.rank()), (File::A, Rank::R1));
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub enum Square {

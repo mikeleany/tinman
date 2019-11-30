@@ -11,6 +11,21 @@ use super::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A builder for `Position`
+///
+/// A simple example with only two kings and a pawn:
+///
+/// ```rust
+/// use tinman::chess::PositionBuilder;
+/// use tinman::chess::{Color, Piece, Square};
+///
+/// let pos = PositionBuilder::new()
+///     .piece(Color::White, Piece::King, Square::E1)
+///     .piece(Color::White, Piece::Pawn, Square::E2)
+///     .piece(Color::Black, Piece::King, Square::E8)
+///     .turn(Color::White)
+///     .validate()?;
+/// # Ok::<(), tinman::chess::Error>(())
+/// ```
 #[derive(Clone)]
 #[allow(missing_debug_implementations)] // TODO: derive debug when it becomes possible
 pub struct PositionBuilder {
@@ -38,50 +53,50 @@ impl PositionBuilder {
     }
 
     /// Sets the piece at `square`
-    pub fn piece(&mut self, color: Color, piece: Piece, square: Square) -> &Self {
+    pub fn piece(&mut self, color: Color, piece: Piece, square: Square) -> &mut Self {
         self.board[square as usize] = Some((color, piece));
         self
     }
 
     /// Clears the piece at `square`
-    pub fn clear(&mut self, square: Square) -> &Self {
+    pub fn clear(&mut self, square: Square) -> &mut Self {
         self.board[square as usize] = None;
         self
     }
 
-    /// Sets the turn to `color`
-    pub fn turn(&mut self, color: Color) -> &Self {
+    /// Sets the turn to `color` (default is `White`)
+    pub fn turn(&mut self, color: Color) -> &mut Self {
         self.turn = color;
         self
     }
 
-    /// Sets king side castling rights for `color`
-    pub fn can_castle_king_side(&mut self, color: Color, available: bool) -> &Self {
+    /// Sets king side castling rights for `color` (default is `false`)
+    pub fn can_castle_king_side(&mut self, color: Color, available: bool) -> &mut Self {
         self.castle_king_side[color as usize] = available;
         self
     }
 
-    /// Sets queen side castling rights for `color`
-    pub fn can_castle_queen_side(&mut self, color: Color, available: bool) -> &Self {
+    /// Sets queen side castling rights for `color` (default is `false`)
+    pub fn can_castle_queen_side(&mut self, color: Color, available: bool) -> &mut Self {
         self.castle_queen_side[color as usize] = available;
         self
     }
 
-    /// Sets or clears the en-passant square
-    pub fn en_passant_square(&mut self, square: Option<Square>) -> &Self {
+    /// Sets or clears the en-passant square (default is `None`)
+    pub fn en_passant_square(&mut self, square: Option<Square>) -> &mut Self {
         self.ep_square = square;
         self
     }
 
-    /// Sets the number of plies that count toward the 50-move rule. A ply is a move by one player,
-    /// so two plies would be one move by each player.
-    pub fn draw_plies(&mut self, plies: usize) -> &Self {
+    /// Sets the number of plies that count toward the 50-move rule (default is 0). A ply is a move
+    /// by one player, so two plies would be one move by each player.
+    pub fn draw_plies(&mut self, plies: usize) -> &mut Self {
         self.draw_plies = plies;
         self
     }
 
-    /// Sets the move number
-    pub fn move_number(&mut self, plies: usize) -> &Self {
+    /// Sets the move number (default is 1)
+    pub fn move_number(&mut self, plies: usize) -> &mut Self {
         self.move_num = plies;
         self
     }

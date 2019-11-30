@@ -19,6 +19,36 @@ use Piece::*;
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A representation of the arrangement of pieces on the board at a given point in the game, as well
 /// as castling availability and en passant legality.
+///
+/// # Instantiation
+/// There are four typical ways of creating a new `Position` structure.
+///  -  The [`new`](#method.new) method creates a `Position` structure containing the standard
+///     starting position.
+///  -  The [`from_fen_str`](#method.from_fen_str) method (along with its synonyms `from_str` and
+///     `str::parse`) creates a new `Position` structure from a string containing [Forsyth-Edwards
+///     Notation](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) (FEN).
+///  -  Using a [`PositionBuilder`](struct.PositionBuilder.html).
+///  -  As a result of [`Move::make`](struct.Move.html#method.make).
+///
+/// # Generating Moves
+/// The most important thing that can be done with a `Position` is to generate a list of legal
+/// [`Move`](struct.Move.html)s from that `Position`. The [`moves`](#method.moves) method generates
+/// all valid moves, while [`promotions_and_captures`](#method.promotions_and_captures) generates
+/// only moves which gain material.
+///
+/// A typical flow might look something like this:
+///
+/// ```rust
+/// use tinman::chess::Position;
+///
+/// let pos = Position::new();
+///
+/// for mov in pos.moves() {
+///     if let Ok(new_pos) = mov.make() {
+///         // do something useful
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Position {
     zobrist: Zobrist,
@@ -114,7 +144,8 @@ impl Position {
         }
     }
 
-    /// Parse a position from a FEN string
+    /// Parse a position from a string containing [Forsyth-Edwards
+    /// Notation](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) (FEN)
     pub fn from_fen_str(s: &str) -> Result<Position> {
         use Error::*;
 
@@ -307,17 +338,17 @@ impl Position {
         self.in_check
     }
 
-    /// Returns `true` if king-side castling rights are available
+    /// Returns `true` if king-side castling rights are available for `c`
     pub fn has_king_side_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] & CASTLE_KING_SIDE != 0
     }
 
-    /// Returns `true` if queen-side castling rights are available
+    /// Returns `true` if queen-side castling rights are available for `c`
     pub fn has_queen_side_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] & CASTLE_QUEEN_SIDE != 0
     }
 
-    /// Returns `true` if any castling rights are available
+    /// Returns `true` if any castling rights are available for `c`
     pub fn has_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] != 0
     }
@@ -382,106 +413,11 @@ impl Position {
         self.zobrist
     }
 
-    /// Parses a move from a string, validates the pseudo-legality of the move, and returns a `Move`
-    /// tied to this position.
-    ///
-    /// Note that this function does not validate if the move leaves the mover in check or if it
-    /// involves castling through check. Use `Move::make()` to perform those validations.
-    pub fn move_from_str(&self, s: &str) -> Result<Move> {
-        // TODO: handle "O-O" castling notation
-        let mut builder = MoveBuilder::new();
-        let mut chars = s.chars();
-
-        let mut next =  chars.next_back();
-        let mut c = if let Some(c) = next {
-            c.to_string()
-        } else {
-            // empty string
-            return Err(Error::ParseError);
-        };
-
-        // promotion piece
-        let prom_pc = match c.as_str() {
-            "Q" | "q" => Some(Promotion::ToQueen),
-            "R" | "r" => Some(Promotion::ToRook),
-            "B" | "b" => Some(Promotion::ToBishop),
-            "N" | "n" => Some(Promotion::ToKnight),
-            _ => None, // let validate move determine move type
-        };
-
-        if prom_pc.is_some() {
-            builder.promotion(prom_pc);
-
-            next = chars.next_back();
-            if next == Some('=') {
-                next = chars.next_back();
-                c = if let Some(c) = next {
-                    c.to_string()
-                } else {
-                    // missing destination
-                    return Err(Error::ParseError);
-                };
-            }
-        }
-
-        // destination
-        let dest_rank = Rank::from_str(&c)?;
-
-        next =  chars.next_back();
-        c = if let Some(c) = next {
-            c.to_string()
-        } else {
-            // missing destination file
-            return Err(Error::ParseError);
-        };
-
-        let dest_file = File::from_str(&c)?;
-
-        next = chars.next_back();
-        if next == Some('-') || next == Some('x') {
-            next = chars.next_back();
-        }
-
-        let dest = Square::from_coord(dest_file, dest_rank);
-        builder.destination(dest);
-
-        // origin
-        if let Some(c) = next {
-            if let Ok(rank) = Rank::from_str(&c.to_string()) {
-                builder.origin_rank(rank);
-                next = chars.next_back();
-            }
-        }
-        if let Some(c) = next {
-            if let Ok(file) = File::from_str(&c.to_string()) {
-                builder.origin_file(file);
-                next = chars.next_back();
-            }
-        }
-
-        // piece
-        if let Some(c) = next {
-            if let Ok(piece) = Piece::from_str(&c.to_string()) {
-                builder.piece(piece);
-                next = chars.next_back();
-            } else {
-                // cannot determine piece
-                return Err(Error::ParseError);
-            }
-        }
-
-        if next.is_some() {
-            // extra characters
-            return Err(Error::ParseError);
-        }
-
-        Ok(builder.validate(self)?)
-    }
-
     /// Returns an iterator over valid (pseudo-legal) moves from this position.
     ///
     /// Note that the iterator does not validate if the moves leave the mover in check or if they
-    /// involves castling through check. Use `Move::make()` to perform those validations.
+    /// involve castling through check. Use [`Move::make()`](struct.Move.html#method.make) to
+    /// perform those validations.
     pub fn moves(&self) -> Moves {
         Moves::new(self)
     }
@@ -489,12 +425,13 @@ impl Position {
     /// Returns an iterator over valid (pseudo-legal) promotions and captures from this position.
     ///
     /// Note that the iterator does not validate if the moves leave the mover in check or if they
-    /// involves castling through check. Use `Move::make()` to perform those validations.
+    /// involve castling through check. Use [`Move::make()`](struct.Move.html#method.make) to
+    /// perform those validations.
     pub fn promotions_and_captures(&self) -> PromotionsAndCaptures {
         PromotionsAndCaptures::new(self)
     }
 
-    /// Calculate the positions's Zobrist key from scratch
+    /// Calculate the `Positions`'s Zobrist key from scratch
     fn calc_zobrist(&mut self) {
         self.zobrist = Zobrist::new();
 

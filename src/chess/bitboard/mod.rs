@@ -6,6 +6,96 @@
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
+//! # Moves and Attacks
+//! Bitboards are useful for quickly computing the moves or attacks available to a piece based on
+//! its location on the board. In addition to the [`Bitboard`](struct.Bitboard.html) type, the
+//! `bitboard` module also provides functions to compute moves and attacks for all pieces except
+//! pawns. For these pieces, the word "attacks" is used here as these pieces can only move to the
+//! squares where they attack.
+//!
+//! ## Direct attacks (Knights and Kings)
+//! Knights and kings move directly to their destinations without passing through any other squares.
+//! That makes computing these attacks a bit easier than with the sliding pieces. For example, the
+//! squares attacked by a knight on h1 can be computed as follows:
+//!
+//! ```rust
+//! use tinman::chess::Square;
+//! use tinman::chess::bitboard::knight_attacks;
+//!
+//! let mut attacks = knight_attacks(Square::H1);
+//! assert_eq!(attacks.pop(), Some(Square::F2));
+//! assert_eq!(attacks.pop(), Some(Square::G3));
+//! assert_eq!(attacks.pop(), None);
+//! ```
+//!
+//! King attacks can be computed in the same way.
+//!
+//! ## Sliding Attacks (Bishops, Rooks and Queens)
+//! Moves by sliding pieces can be blocked by pieces in the path. For this reason, the functions for
+//! sliding attacks require an additional argument: a `Bitboard` of occupied squares. Here's an
+//! example of rook attacks:
+//!
+//! ```rust
+//! use tinman::chess::Square;
+//! use tinman::chess::bitboard::{Bitboard, rook_attacks};
+//!
+//! let occ = Bitboard::from(Square::A2) | Square::C1.into();
+//! let mut attacks = rook_attacks(Square::A1, occ);
+//! assert_eq!(attacks.pop(), Some(Square::A2));
+//! assert_eq!(attacks.pop(), Some(Square::B1));
+//! assert_eq!(attacks.pop(), Some(Square::C1));
+//! assert_eq!(attacks.pop(), None);
+//! ```
+//!
+//! Bishop and queen attacks can be computed in the same way.
+//!
+//! ## Pawn Advancements and Attacks
+//! For pawns, there's not a function like those used for other piece attacks. Instead the
+//! advancements and attacks of multiple pawns can be computed simultaneously using the
+//! [`Bitboard::shift_y`](struct.Bitboard.html#method.shift_y) and
+//! [`Bityboard::shift_xy`](struct.Bitboard.html#method.shift_xy) methods. These methods shift all
+//! squares in a `Bitboard` by a specified amount. The caveat with these methods is that they will
+//! wrap around the y axis (eg. from a8 to b1 when shifting in the +y direction). Given that no
+//! pawns should ever be on ranks 1 or 8, that issue can be easily avoided. These methods won't
+//! wrap along the x axis, however, as seen in the second example below.
+//!
+//! The following example demonstrates how to compute non-capture pawn advancements. The following
+//! code does not account for blocked pawns.
+//!
+//! ```rust
+//! use tinman::chess::Square;
+//! use tinman::chess::bitboard::Bitboard;
+//!
+//! let forward = -1; // black's turn, for white this would be 1
+//! let pawns = Bitboard::from(Square::A7) | Square::B2.into();
+//! let mut destinations = pawns.shift_y(forward);
+//! assert_eq!(destinations.pop(), Some(Square::A6));
+//! assert_eq!(destinations.pop(), Some(Square::B1));
+//! assert_eq!(destinations.pop(), None);
+//! ```
+//!
+//! The next example demonstrates how to compute pawn attacks:
+//!
+//! ```rust
+//! use tinman::chess::Square;
+//! use tinman::chess::bitboard::Bitboard;
+//!
+//! let forward = -1; // black's turn, for white this would be 1
+//! let pawns = Bitboard::from(Square::A7) | Square::B2.into();
+//!
+//! // attacks toward king-side
+//! let mut ks_attacks = pawns.shift_xy(1, forward);
+//! assert_eq!(ks_attacks.pop(), Some(Square::B6));
+//! assert_eq!(ks_attacks.pop(), Some(Square::C1));
+//! assert_eq!(ks_attacks.pop(), None);
+//!
+//! // attacks toward queen side
+//! // Note that since the pawn on a7 is on the far queen-side edge of the board, it
+//! // has no attacks on that side. shift_xy handles this properly, without wrapping.
+//! let mut qs_attacks = pawns.shift_xy(-1, forward);
+//! assert_eq!(qs_attacks.pop(), Some(Square::A1));
+//! assert_eq!(qs_attacks.pop(), None);
+//! ```
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::convert::TryInto;
 use std::iter::FusedIterator;
@@ -19,6 +109,43 @@ pub use attacks::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A set of squares with each bit representing one square
+///
+/// A `Bitboard` is, essentially, a set of [`Square`](../enum.Square.html)s stored in a 64-bit
+/// integer. Each bit corresponds to one `Square`. If the bit is set, that `Square` is present. If
+/// it is clear, the `Square` is not present. The diagram below shows the layout of the bits.
+///
+/// ```text
+///     1    2    3    4    5    6    7    8
+///    ---------------------------------------
+/// h | 07 | 15 | 23 | 31 | 39 | 47 | 55 | 63 | h
+///    ---------------------------------------
+/// g | 06 | 14 | 22 | 30 | 38 | 46 | 54 | 62 | g
+///    ---------------------------------------
+/// f | 05 | 13 | 21 | 29 | 37 | 45 | 53 | 61 | f
+///    ---------------------------------------
+/// e | 04 | 12 | 20 | 28 | 36 | 44 | 52 | 60 | e
+///    ---------------------------------------
+/// d | 03 | 11 | 19 | 27 | 35 | 43 | 51 | 59 | d
+///    ---------------------------------------
+/// c | 02 | 10 | 18 | 26 | 34 | 42 | 50 | 58 | c
+///    ---------------------------------------
+/// b | 01 | 09 | 17 | 25 | 33 | 41 | 49 | 57 | b
+///    ---------------------------------------
+/// a | 00 | 08 | 16 | 24 | 32 | 40 | 48 | 56 | a
+///    ---------------------------------------
+///     1    2    3    4    5    6    7    8
+/// ```
+///
+/// `Bitboard` implements all the bit-wise logic operators: `|`, `&`, `^`, `!`, `|=`, `&=`, and
+/// `^=`. It also has methods that are typical for sets and collections, such as `insert`, `remove`,
+/// `len`, and `contains`. It implements IntoIterator. However, since it's only a 64-bit value, it
+/// implement's `Copy`, and there's no need for the borrowing iterator methods `iter` and
+/// `iter_mut`.
+///
+/// The bit-shift operators are not implemented as they wouldn't be well-defined for a
+/// 2-dimensional `Bitboard`. Instead, the methods, `shift_x`, `shift_y` and `shift_xy` are
+/// provided. See the crate-level documentation for
+/// [examples](index.html#pawn-advancements-and-attacks) of these methods.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct Bitboard(u64);
 
@@ -93,6 +220,8 @@ impl Bitboard {
     }
 
     /// Returns a bitboard with all squares shifted by `x` files
+    ///
+    /// Overflow does not wrap.
     pub fn shift_x(self, x: i8) -> Bitboard {
         let bits = x << 3;
 
@@ -105,7 +234,18 @@ impl Bitboard {
 
     /// Returns a bitboard with all squares shifted by `y` ranks
     ///
-    /// Rank overflow wraps to the next or previous file.
+    /// Rank overflow wraps to the next file, as seen below.
+    ///
+    /// ```rust
+    /// # use tinman::chess::Square;
+    /// # use tinman::chess::bitboard::Bitboard;
+    /// #
+    /// assert_eq!(Bitboard::from(Square::A8).shift_y(1), Bitboard::from(Square::B1));
+    /// assert_eq!(Bitboard::from(Square::B1).shift_y(-1), Bitboard::from(Square::A8));
+    /// ```
+    ///
+    /// See the crate-level documentation for
+    /// [another example](index.html#pawn-advancements-and-attacks) of this method.
     pub fn shift_y(self, y: i8) -> Bitboard {
         let bits = y;
 
@@ -118,7 +258,11 @@ impl Bitboard {
 
     /// Returns a bitboard with all squares shifted by `x` files and `y` ranks.
     ///
-    /// Rank overflow wraps to the next or previous file.
+    /// Rank overflow wraps to the next file. See the documentation for
+    /// [`shift_y`](#method.shift_y). File overflow does not wrap.
+    ///
+    /// See the crate-level documentation for
+    /// [an example](index.html#pawn-advancements-and-attacks) of this method.
     pub fn shift_xy(self, x:i8, y:i8) -> Bitboard {
         let bits = (x << 3) + y;
 
