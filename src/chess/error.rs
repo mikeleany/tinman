@@ -35,6 +35,8 @@ pub enum Error {
     MissingEnPassantPawn,
     /// En-passant square is occupied
     EnPassantSquareOccupied,
+    /// Move does not correspond to the current position
+    MovePositionMismatch,
 }
 
 impl fmt::Display for Error {
@@ -53,6 +55,7 @@ impl fmt::Display for Error {
             InvalidCastlingFlags => "castling flags aren't valid for this position",
             MissingEnPassantPawn => "en-passant square without capturable pawn",
             EnPassantSquareOccupied => "en-passant square is occupied",
+            MovePositionMismatch => "move does not correspond to the current position",
         }.fmt(f)
     }
 }
