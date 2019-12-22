@@ -763,13 +763,14 @@ impl FromStr for MoveBuilder {
             next = chars.next_back();
             if next == Some('=') {
                 next = chars.next_back();
-                c = if let Some(c) = next {
-                    c.to_string()
-                } else {
-                    // missing destination
-                    return Err(Error::ParseError);
-                };
             }
+
+            c = if let Some(c) = next {
+                c.to_string()
+            } else {
+                // missing destination
+                return Err(Error::ParseError);
+            };
         }
 
         // destination

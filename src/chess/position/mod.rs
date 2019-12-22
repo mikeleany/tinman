@@ -50,7 +50,7 @@ use Piece::*;
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     zobrist: Zobrist,
     occ_squares: Bitboard,
@@ -660,6 +660,13 @@ impl Default for Position {
 }
 
 impl fmt::Display for Position {
+    /// Writes out the position using FEN
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.to_fen_str().fmt(f)
+    }
+}
+
+impl fmt::Debug for Position {
     /// Writes out the position using FEN
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_fen_str().fmt(f)

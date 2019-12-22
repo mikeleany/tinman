@@ -157,12 +157,13 @@ fn split_epd_line(line: &str, line_num: usize) -> Result<(), String> {
     };
     println!("\nLine {:3}:\t{}", line_num, fen);
     for field in fields {
+        use std::cmp::Ordering;
         let nums = field.trim_start_matches('D');
         let nums: Vec<&str> = nums.split_whitespace().collect();
-        if nums.len() < 2 {
-            return Err(format!("\"{}\": not enough fields", field));
-        } else if nums.len() > 2 {
-            return Err(format!("\"{}\": too many fields", field));
+        match nums.len().cmp(&2) {
+            Ordering::Less => return Err(format!("\"{}\": not enough fields", field)),
+            Ordering::Greater => return Err(format!("\"{}\": too many fields", field)),
+            _ => {},
         }
 
         let depth: usize = match nums[0].parse() {

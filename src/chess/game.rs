@@ -117,6 +117,16 @@ impl MoveSequence {
         self.moves.is_empty()
     }
 
+    /// Returns the first move in the sequence.
+    pub fn first(&self) -> Option<&ArcMove> {
+        self.moves.first()
+    }
+
+    /// Returns the last move in the sequence.
+    pub fn last(&self) -> Option<&ArcMove> {
+        self.moves.last()
+    }
+
     /// Returns the initial position of the move sequence.
     pub fn initial_position(&self) -> &Arc<Position> {
         if !self.is_empty() {
@@ -147,12 +157,12 @@ impl MoveSequence {
     /// Note that an index of `self.len()` is in bounds and will return the final position, which
     /// is the result of the last move.
     pub fn position(&self, index: usize) -> Option<&Arc<Position>> {
-        if index < self.len() {
-            Some(&self.moves[index].position_arc())
-        } else if index == self.len() {
-            Some(&self.final_pos)
-        } else {
-            None
+        use std::cmp::Ordering;
+
+        match index.cmp(&self.len()) {
+            Ordering::Less => Some(&self.moves[index].position_arc()),
+            Ordering::Equal => Some(&self.final_pos),
+            Ordering::Greater => None,
         }
     }
 
@@ -381,6 +391,11 @@ impl Clock {
         }
     }
 
+    /// Get the remaining time for `color`.
+    pub fn remaining(&self, color: Color) -> Duration {
+        self.remaining[color as usize]
+    }
+
     /// Update the clock based on the `elapsed` time and the time control being used.
     pub fn update(&mut self, color: Color, elapsed: Duration, moves: usize) -> bool {
         if let Some(remaining) = self.remaining[color as usize].checked_sub(elapsed) {
@@ -411,14 +426,75 @@ impl Clock {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// The result of a game
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GameResult {
-    /// White has won, such as by checkmate or because black forfeited.
-    WhiteWins,
-    /// The game has ended in a draw, such as by stalemate, 3-fold repetition, or other means.
-    Draw,
-    /// Black has won, such as by checkmate or because white forfeited.
-    BlackWins,
+    /// The given color has won.
+    Win(Color, Option<WinReason>),
+    /// The game has ended in a draw.
+    Draw(Option<DrawReason>),
+}
+
+impl fmt::Display for GameResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GameResult::Win(Color::White, Some(reason)) => format!("1-0 {{{}}}", reason).fmt(f),
+            GameResult::Win(Color::White, None) => "1-0".fmt(f),
+            GameResult::Win(Color::Black, Some(reason)) => format!("0-1 {{{}}}", reason).fmt(f),
+            GameResult::Win(Color::Black, None) => "0-1".fmt(f),
+            GameResult::Draw(Some(reason)) => format!("1/2-1/2 {{{}}}", reason).fmt(f),
+            GameResult::Draw(None) => "1/2-1/2".fmt(f),
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Win reason
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WinReason {
+    /// The game was won by checkmate.
+    Checkmate,
+    /// One player resigned.
+    Resignation,
+    /// One player's time ran out.
+    Time,
+}
+
+impl fmt::Display for WinReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WinReason::Checkmate => "checkmate".fmt(f),
+            WinReason::Resignation => "by resignation".fmt(f),
+            WinReason::Time => "time expired".fmt(f),
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Draw reason
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DrawReason {
+    /// Stalemate
+    Stalemate,
+    /// Draw by the fifty-move rule
+    FiftyMoves,
+    /// Draw by three-fold repetition
+    Repetition,
+    /// Insufficient material
+    Material,
+    /// Draw by agreement
+    Agreement,
+}
+
+impl fmt::Display for DrawReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DrawReason::Stalemate => "stalemate".fmt(f),
+            DrawReason::FiftyMoves => "fifty-move rule".fmt(f),
+            DrawReason::Repetition => "repetition".fmt(f),
+            DrawReason::Material => "insufficient material".fmt(f),
+            DrawReason::Agreement => "by agreement".fmt(f),
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -461,6 +537,11 @@ impl Game {
         &self.moves
     }
 
+    /// Returns the time remaining for `color`
+    pub fn time_remaining(&self, color: Color) -> Duration {
+        self.clock.remaining(color)
+    }
+
     /// Returns the game's clock
     pub fn clock(&self) -> &Clock {
         &self.clock
@@ -471,9 +552,16 @@ impl Game {
         &mut self.clock
     }
 
+    /// Returns the result of the game, or `None` if the game isn't over
+    pub fn result(&self) -> Option<GameResult> {
+        self.result
+    }
+
     /// Make the given move
     pub fn make_move(&mut self, mv: ArcMove) -> Result<&mut Self> {
         self.moves.push(mv)?;
+
+        self.check_game_result();
 
         Ok(self)
     }
@@ -483,7 +571,7 @@ impl Game {
     pub fn make_move_timed(&mut self, mv: ArcMove, elapsed: Duration) -> Result<&mut Self> {
         let color = mv.color();
 
-        self.moves.push(mv)?;
+        self.make_move(mv)?;
         self.clock.update(color, elapsed, (self.moves.len() + 1)/2);
 
         Ok(self)
@@ -511,5 +599,33 @@ impl Game {
     /// Undoes the last move. Returns false if there are no moves to undo.
     pub fn undo(&mut self) -> bool {
         self.moves.pop().is_some()
+    }
+
+    /// Checks if the game is over, and sets `self.result` appropriately
+    fn check_game_result(&mut self) {
+        if self.position().fifty_moves() {
+            self.result = Some(GameResult::Draw(Some(DrawReason::FiftyMoves)));
+            return;
+        } else if self.moves.three_fold_repetition() {
+            self.result = Some(GameResult::Draw(Some(DrawReason::Repetition)));
+            return;
+        }
+
+        for mv in self.position().moves() {
+            if mv.make().is_ok() {
+                self.result = None;
+                return;
+            }
+        }
+
+        // no legal moves if we reach this point
+        if self.position().in_check() {
+            self.result = Some(GameResult::Win(
+                !self.position().turn(),
+                Some(WinReason::Checkmate)
+            ));
+        } else {
+            self.result = Some(GameResult::Draw(Some(DrawReason::Stalemate)));
+        }
     }
 }

@@ -440,8 +440,7 @@ pub use position::Position;
 pub use position::builder::PositionBuilder;
 pub use position::zobrist::Zobrist;
 pub use position::move_iter::{Moves, PromotionsAndCaptures};
-mod game;
-pub use game::{Game, MoveSequence, Positions, Clock, TimeControl, GameResult};
+pub mod game;
 
 pub mod variations;
 
