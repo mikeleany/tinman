@@ -13,6 +13,7 @@ use std::iter::FusedIterator;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use std::time::Duration;
+use std::convert::TryInto;
 use super::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -226,9 +227,28 @@ impl IntoIterator for MoveSequence {
     }
 }
 
+impl TryFrom<ArcMove> for MoveSequence {
+    type Error = Error;
+
+    fn try_from(mv: ArcMove) -> Result<Self> {
+        let final_pos = Arc::new(mv.make()?);
+
+        Ok(MoveSequence {
+            moves: vec![ mv ],
+            final_pos,
+        })
+    }
+}
+
 impl FromIterator<ArcMove> for Result<MoveSequence> {
     fn from_iter<I: IntoIterator<Item=ArcMove>>(iter: I) -> Self {
-        let mut seq = MoveSequence::new();
+        let mut iter = iter.into_iter();
+
+        let mut seq = if let Some(mv) = iter.next() {
+            mv.try_into()?
+        } else {
+            MoveSequence::new()
+        };
 
         for mv in iter {
             seq.push(mv)?;
@@ -249,7 +269,9 @@ impl<I> Index<I> for MoveSequence where I: SliceIndex<[ArcMove]> {
 impl fmt::Display for MoveSequence {
     /// The move is formatted as follows:
     ///
-    /// "{}" -- As formatted in PGN (eg 1. e4 e5 2. Nf3)
+    /// "{}" -- Space delimited sequence of SAN (eg e4 e5 Nf3)
+    ///
+    /// "{:+}" -- As formatted in PGN (eg 1. e4 e5 2. Nf3)
     ///
     /// "{:#}" -- A space delimited sequence in Coordinate Notation (eg e2e4 e7e5 g1f3)
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -261,7 +283,7 @@ impl fmt::Display for MoveSequence {
             }
         } else {
             for mv in self.iter() {
-                if mv.position().turn() == Color::White {
+                if f.sign_plus() && mv.position().turn() == Color::White {
                     s += &format!("{}. ", mv.position().move_number());
                 }
                 s += &format!("{} ", mv);
