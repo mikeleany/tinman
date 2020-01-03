@@ -20,8 +20,8 @@ use super::*;
 /// A structure to represent a sequence of moves and resulting positions
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MoveSequence {
-    moves: Vec<ArcMove>,
-    final_pos: Arc<Position>,
+    moves: Vec<ArcMove>,        // TODO: make this Vec<DetachedMove>
+    final_pos: Arc<Position>,   // TODO: make this positions: Vec<Position>
 }
 
 impl MoveSequence {
@@ -411,6 +411,11 @@ impl Clock {
             remaining: [ remaining, remaining ],
             tc,
         }
+    }
+
+    /// Returns the time control associated with this clock.
+    pub fn time_control(&self) -> TimeControl {
+        self.tc
     }
 
     /// Get the remaining time for `color`.
