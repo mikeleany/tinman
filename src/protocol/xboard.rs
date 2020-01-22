@@ -52,7 +52,7 @@ impl Xboard {
     /// Starts the xboard interface and engine running.
     pub fn new() -> Self {
         Xboard {
-            client: io::Client::new(),
+            client: io::Client::connect(),
             game: Game::new(),
             state: State::Idle,
             color: None,
@@ -90,7 +90,7 @@ impl Protocol for Xboard {
                             Response::Feature(vec![Done(true)]).send();
                         },
                         Accepted(_) => { },
-                        Rejected(name) => {
+                        Rejected(_name) => {
                             // TODO: check if that's a problem
                         },
                         Ping(n) => {
@@ -182,10 +182,10 @@ impl Protocol for Xboard {
                         SetTime(time) => {
                             self.game.set_time_control(TimeControl::Exact(time));
                         },
-                        SetDepth(depth) => {
+                        SetDepth(_depth) => {
                             // TODO: set maximum search depth
                         },
-                        Memory(size) => {
+                        Memory(_size) => {
                             // TODO: set hash table size
                         },
                         Post => {
@@ -386,10 +386,10 @@ impl Protocol for Xboard {
                         SetTime(time) => {
                             self.game.set_time_control(TimeControl::Exact(time));
                         },
-                        SetDepth(depth) => {
+                        SetDepth(_depth) => {
                             // TODO: set maximum search depth
                         },
-                        Memory(size) => {
+                        Memory(_size) => {
                             // TODO: set hash table size
                         },
                         Post => {
@@ -441,6 +441,12 @@ impl Protocol for Xboard {
         } else {
             None
         }
+    }
+}
+
+impl Default for Xboard {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

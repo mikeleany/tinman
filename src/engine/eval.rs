@@ -165,7 +165,7 @@ pub fn evaluate(pos: &Position) -> Score {
     use Piece::*;
 
     let mut val = [0; Color::COUNT];
-    // let mut total_piece_val = 0;
+    let mut total_piece_val = 0;
 
     for color in [White, Black].iter().copied() {
         for piece in [Pawn, Knight, Bishop, Rook, Queen].iter().copied() {
@@ -174,12 +174,22 @@ pub fn evaluate(pos: &Position) -> Score {
                 val[color as usize] += PIECE_VAL[piece as usize]
                     + PIECE_SQUARE_VAL[piece as usize][sq as usize];
 
-                // if piece != Pawn {
-                //     total_piece_val += PIECE_VAL[piece as usize];
-                // }
             }
-            // val[color as usize] += pos.occupied_by_piece(color, piece).len() as isize
-            //     * PIECE_VAL[piece as usize];
+            total_piece_val += pos.occupied_by_piece(color, piece).len() as isize
+                * PIECE_VAL[piece as usize];
+        }
+    }
+
+    for color in [White, Black].iter().copied() {
+        let sq = pos.occupied_by_piece(color, King).peek().expect("INFALLIBLE");
+        let sq = if color == White { sq as usize } else { sq as usize ^ 0o07 };
+
+        if total_piece_val > 3*PIECE_VAL[Queen as usize] {
+            val[color as usize] += MID_KING_TABLE[sq as usize];
+        } else if total_piece_val > 2*PIECE_VAL[Queen as usize] {
+            val[color as usize] += (MID_KING_TABLE[sq as usize] + END_KING_TABLE[sq as usize])/2;
+        } else {
+            val[color as usize] += END_KING_TABLE[sq as usize];
         }
     }
 

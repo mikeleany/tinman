@@ -19,7 +19,7 @@ pub struct Client(Receiver<String>);
 
 impl Client {
     /// Creates and returns a new interface.
-    pub fn new() -> Self {
+    pub fn connect() -> Self {
         let (sender, receiver) = channel();
         thread::spawn(move || {
             Self::thread(sender);
