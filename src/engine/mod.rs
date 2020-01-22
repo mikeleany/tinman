@@ -163,13 +163,22 @@ impl<T> Engine<T> where T: Protocol {
         let clock = self.protocol.game().clock();
 
         match clock.time_control() {
-            Infinite => self.stop_times = None,
+            Infinite => {
+                debug!("time remaining: infinite");
+
+                self.stop_times = None;
+            },
             Exact(time) => {
+                debug!("time remaining: {:?}", time);
+
                 let stop_time = self.start_time + time;
                 self.stop_times = Some((stop_time, stop_time));
             },
             Incremental{ inc, .. } => {
                 let time = clock.remaining(self.color);
+                debug!("time remaining: {:?}", time);
+                debug!("time increment: {:?}", inc);
+
                 let search_time = if time > inc * 6 {
                     time/30 + inc
                 } else {
@@ -181,7 +190,10 @@ impl<T> Engine<T> where T: Protocol {
                 ));
             },
             _ => {
-                let search_time = clock.remaining(self.color) / 30;
+                let time = clock.remaining(self.color);
+                let search_time = time / 30;
+                debug!("time remaining: {:?}", time);
+
                 self.stop_times = Some((
                     self.start_time + search_time,
                     self.start_time + search_time * 2

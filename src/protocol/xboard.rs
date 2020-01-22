@@ -128,7 +128,9 @@ impl Protocol for Xboard {
                         SetBoard(fen) => {
                             match fen.parse() {
                                 Ok(pos) => {
+                                    let tc = self.game.clock().time_control();
                                     self.game = Game::starting_at(pos);
+                                    self.game.set_time_control(tc);
                                 },
                                 Err(err) => Response::ErrorMessage(line, err.to_string()).send(),
                             }
@@ -333,7 +335,9 @@ impl Protocol for Xboard {
                         SetBoard(fen) => {
                             match fen.parse() {
                                 Ok(pos) => {
+                                    let tc = self.game.clock().time_control();
                                     self.game = Game::starting_at(pos);
+                                    self.game.set_time_control(tc);
                                 },
                                 Err(err) => Response::ErrorMessage(line, err.to_string()).send(),
                             }
@@ -362,6 +366,22 @@ impl Protocol for Xboard {
                         MoveNow => {
                             self.state = State::Thinking;
                             return Some(SearchAction::Stop);
+                        },
+                        Time(time) => {
+                            if let Some(color) = self.color {
+                                self.game.clock_mut().set(color, time);
+                            } else {
+                                let color = self.game.position().turn();
+                                self.game.clock_mut().set(color, time);
+                            }
+                        },
+                        OppTime(time) => {
+                            if let Some(color) = self.color {
+                                self.game.clock_mut().set(!color, time);
+                            } else {
+                                let color = self.game.position().turn();
+                                self.game.clock_mut().set(!color, time);
+                            }
                         },
                         SetTime(time) => {
                             self.game.set_time_control(TimeControl::Exact(time));
