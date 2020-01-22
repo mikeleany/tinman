@@ -40,6 +40,7 @@ use Piece::*;
 ///
 /// ```rust
 /// use tinman::chess::Position;
+/// use tinman::chess::ValidMove;
 ///
 /// let pos = Position::new();
 ///
@@ -49,7 +50,7 @@ use Piece::*;
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     zobrist: Zobrist,
     occ_squares: Bitboard,
@@ -158,7 +159,7 @@ impl Position {
             let mut f = 0;
             for c in board.chars() {
                 match c {
-                    '1' ... '8' => {
+                    '1' ..= '8' => {
                         f += c.to_digit(10).expect("INFALLIBLE") as usize;
                         if f > 8 {
                             return Err(ParseError);
@@ -431,6 +432,164 @@ impl Position {
         PromotionsAndCaptures::new(self)
     }
 
+    /// Make the move, returning the resulting position.
+    pub fn make_move<T: ValidMove>(mv: &T) -> Result<Position> {
+        let mut pos = mv.position().clone();
+
+        // clear captured piece (including en passant)
+        if let Some(capt_pc) = mv.captured_piece() {
+            let sq = if mv.move_type() == MoveType::EnPassant {
+                Square::from_coord(mv.destination().file(), mv.origin().rank())
+            } else {
+                mv.destination()
+            };
+
+            let mask: Bitboard = sq.into();
+            pos.occ_squares ^= mask;
+            pos.occ_by_color[!pos.turn() as usize] ^= mask;
+            pos.occ_by_piece[!pos.turn() as usize][capt_pc as usize] ^= mask;
+            pos.zobrist.toggle_piece_placement(!pos.turn(), capt_pc, sq);
+
+            // update opponent's castling rights if applicable
+            match (!pos.turn(), sq) {
+                (White, Square::A1) | (Black, Square::A8) => {
+                    if pos.has_queen_side_castling_rights(!pos.turn()) {
+                        pos.castling_rights[!pos.turn() as usize] &= !CASTLE_QUEEN_SIDE;
+                        pos.zobrist.toggle_castling_rights(!pos.turn(), CASTLE_QUEEN_SIDE);
+                    }
+                },
+                (White, Square::H1) | (Black, Square::H8) => {
+                    if pos.has_king_side_castling_rights(!pos.turn()) {
+                        pos.castling_rights[!pos.turn() as usize] &= !CASTLE_KING_SIDE;
+                        pos.zobrist.toggle_castling_rights(!pos.turn(), CASTLE_KING_SIDE);
+                    }
+                },
+                _ => {},
+            }
+        }
+
+        // move piece to new location (update piece type if promotion)
+        let mask = Bitboard::from(mv.origin()) | mv.destination().into();
+        pos.occ_squares ^= mask;
+        pos.occ_by_color[pos.turn() as usize] ^= mask;
+        pos.zobrist.toggle_piece_placement(pos.turn(), mv.piece(), mv.origin());
+        match mv.move_type() {
+            MoveType::Promotion(prom_pc) => {
+                pos.occ_by_piece[pos.turn() as usize][mv.piece() as usize] ^= mv.origin().into();
+                pos.occ_by_piece[pos.turn() as usize][prom_pc as usize] ^= mv.destination().into();
+                pos.zobrist.toggle_piece_placement(pos.turn(), prom_pc.into(), mv.destination());
+            },
+            _ => {
+                pos.occ_by_piece[pos.turn() as usize][mv.piece() as usize] ^= mask;
+                pos.zobrist.toggle_piece_placement(pos.turn(), mv.piece(), mv.destination());
+            },
+        }
+
+        // move rook for castling moves
+        if mv.move_type() == MoveType::Castling {
+            let rank = mv.origin().rank();
+            let (orig, dest);
+            match mv.destination().file() {
+                File::C => {
+                    orig = Square::from_coord(File::A, rank);
+                    dest = Square::from_coord(File::D, rank);
+                },
+                File::G => {
+                    orig = Square::from_coord(File::H, rank);
+                    dest = Square::from_coord(File::F, rank);
+                },
+                _ => unreachable!(),
+            }
+
+            if pos.square_attacked_by(dest, !pos.turn()) {
+                // castling through check
+                return Err(Error::CastlingThroughCheck);
+            }
+
+            let mask = Bitboard::from(orig) | dest.into();
+            pos.occ_squares ^= mask;
+            pos.occ_by_color[pos.turn() as usize] ^= mask;
+            pos.occ_by_piece[pos.turn() as usize][Rook as usize] ^= mask;
+            pos.zobrist.toggle_piece_placement(pos.turn(), Rook, orig);
+            pos.zobrist.toggle_piece_placement(pos.turn(), Rook, dest);
+        }
+
+        // verify mover is not in check
+        let king_attacked = if mv.piece() != King && !pos.in_check() {
+            pos.square_attacked_by_sliding(pos.king_location(pos.turn()), !pos.turn())
+        } else {
+            pos.square_attacked_by(pos.king_location(pos.turn()), !pos.turn())
+        };
+        if king_attacked {
+            // own king is under attack
+            return Err(Error::KingCapturable);
+        }
+
+        // update en passant square
+        if let Some(ep_sq) = pos.en_passant_square() {
+            pos.zobrist.toggle_ep_square(ep_sq);
+        }
+        if mv.move_type() == MoveType::Advance2 {
+            pos.ep_square = match pos.turn() {
+                White => Some(Square::from_coord(mv.destination().file(), Rank::R3)),
+                Black => Some(Square::from_coord(mv.destination().file(), Rank::R6)),
+            };
+            pos.zobrist.toggle_ep_square(pos.en_passant_square().expect("INFALLIBLE"));
+        } else {
+            pos.ep_square = None;
+        }
+
+        // update castling rights if applicable
+        match (pos.turn(), mv.origin()) {
+            (White, Square::A1) | (Black, Square::A8) => {
+                if pos.has_queen_side_castling_rights(pos.turn()) {
+                    pos.castling_rights[pos.turn() as usize] &= !CASTLE_QUEEN_SIDE;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), CASTLE_QUEEN_SIDE);
+                }
+            },
+            (White, Square::H1) | (Black, Square::H8) => {
+                if pos.has_king_side_castling_rights(pos.turn()) {
+                    pos.castling_rights[pos.turn() as usize] &= !CASTLE_KING_SIDE;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), CASTLE_KING_SIDE);
+                }
+            },
+            (White, Square::E1) | (Black, Square::E8) => {
+                if pos.has_castling_rights(pos.turn()) {
+                    let castling_rights = pos.castling_rights[pos.turn() as usize];
+                    pos.castling_rights[pos.turn() as usize] = 0;
+                    pos.zobrist.toggle_castling_rights(pos.turn(), castling_rights);
+                }
+            },
+            _ => {},
+        }
+
+        // switch turns
+        pos.turn = !pos.turn();
+        pos.zobrist.toggle_turn();
+
+        // update move counters
+        if pos.turn() == White {
+            pos.move_num += 1;
+        }
+        if mv.captured_piece().is_some() || mv.piece() == Pawn {
+            pos.draw_plies = 0;
+        } else {
+            pos.draw_plies += 1;
+        }
+
+        // determine if opponent is now in check
+        pos.in_check = match mv.piece() {
+            Pawn | Knight => {
+                pos.square_attacked_by(pos.king_location(pos.turn()), !pos.turn())
+            },
+            _ => {
+                pos.square_attacked_by_sliding(pos.king_location(pos.turn()), !pos.turn())
+            }
+        };
+
+        Ok(pos)
+    }
+
     /// Calculate the `Positions`'s Zobrist key from scratch
     fn calc_zobrist(&mut self) {
         self.zobrist = Zobrist::new();
@@ -507,6 +666,13 @@ impl fmt::Display for Position {
     }
 }
 
+impl fmt::Debug for Position {
+    /// Writes out the position using FEN
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.to_fen_str().fmt(f)
+    }
+}
+
 impl FromStr for Position {
     type Err = Error;
 
@@ -519,7 +685,7 @@ impl FromStr for Position {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 pub mod zobrist;
 pub mod builder;
-pub mod moves;
+pub mod move_iter;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]

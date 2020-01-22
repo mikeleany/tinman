@@ -36,6 +36,7 @@ use std::str::FromStr;
 use std::convert::TryFrom;
 pub use error::*;
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Which side a piece or player is on, based on the color of the pieces for that side.
 ///
@@ -432,12 +433,14 @@ impl From<Square> for usize {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 pub mod bitboard;
+mod moves;
+pub use moves::{ValidMove, Move, ArcMove, MoveType, Promotion, MoveBuilder};
 mod position;
 pub use position::Position;
 pub use position::builder::PositionBuilder;
 pub use position::zobrist::Zobrist;
-pub use position::moves::{Move, MoveType, Promotion, MoveBuilder};
-pub use position::moves::{Moves, PromotionsAndCaptures};
+pub use position::move_iter::{Moves, PromotionsAndCaptures};
+pub mod game;
 
 pub mod variations;
 
