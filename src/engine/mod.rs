@@ -288,6 +288,10 @@ impl<T> Engine<T> where T: Protocol {
         let pos = Arc::clone(self.history.final_position());
         let mut pv = MoveSequence::starting_at(Arc::clone(&pos));
 
+        if self.time_to_stop() {
+            return None;
+        }
+
         if pos.fifty_moves() || self.history.repetition() {
             return Some((Score::draw(), pv));
         }
@@ -304,10 +308,6 @@ impl<T> Engine<T> where T: Protocol {
             } else {
                 return None;
             }
-        }
-
-        if self.time_to_stop() {
-            return None;
         }
 
         // search each move
