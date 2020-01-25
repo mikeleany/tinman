@@ -55,7 +55,7 @@ impl Xboard {
             client: io::Client::connect(),
             game: Game::new(),
             state: State::Idle,
-            color: None,
+            color: Some(chess::Color::Black),
             post_thinking: true,
             can_ponder: true,
             ponder_hits: 0,
@@ -101,6 +101,7 @@ impl Protocol for Xboard {
                         },
                         New => {
                             self.game = Game::new();
+                            self.color = Some(chess::Color::Black);
                         },
                         Force => {
                             self.color = None;
@@ -226,7 +227,11 @@ impl Protocol for Xboard {
             Response::Move(format!("{:#}", mv)).send();
 
             self.state = State::Idle; // default to idle
-            if self.can_ponder {
+
+            if let Some(result) = self.game.result() {
+                // TODO: use Response
+                io::Client::send(&result.to_string());
+            } else if self.can_ponder {
                 if let Some(mv) = thinking.ponder_move() {
                     self.state = State::Pondering(mv.clone());
                 }
