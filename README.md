@@ -18,5 +18,4 @@ the command to run which is simply the path to the executable.
 
 ## Additional Tools
  - `arbiter` will be a command-line tool meant to facilitate games between two chess engines.
- - [`count`](../count/index.html) is a tool which counts the variations from a position to a
-   specified depth.
+ - `count` is a tool which counts the variations from a position to a specified depth.
