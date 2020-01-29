@@ -130,13 +130,14 @@ impl<T> Engine<T> where T: Protocol {
             self.abort = false;
 
             self.history = self.protocol.game().history().clone();
-            self.calc_search_time();
 
             if let Some(mv) = self.protocol.ponder_move() {
                 self.pondering = true;
                 self.history.push(mv.clone()).expect("Ponder move must be legal");
+                debug!("pondering");
             } else {
                 self.pondering = false;
+                self.calc_search_time();
             }
             self.color = self.history.final_position().turn();
 
@@ -387,6 +388,8 @@ impl<T> Engine<T> where T: Protocol {
 
                     best_val = max(best_val, val);
                     alpha = max(alpha, best_val);
+                } else {
+                    return None;
                 }
             }
         }
@@ -399,9 +402,30 @@ impl<T> Engine<T> where T: Protocol {
         self.nodes += 1;
 
         if self.nodes%1000 == 0 {
-            match self.stop_times {
-                Some((stop_time, _)) if Instant::now() >= stop_time => return true,
-                _ => return false,
+            match self.protocol.check_input() {
+                Some(SearchAction::PonderHit) => {
+                    debug!("ponder hit");
+                    self.pondering = false;
+                    self.calc_search_time();
+                }
+                Some(SearchAction::Stop) => {
+                    debug!("search stopped");
+                    self.pondering = false;
+                    return true;
+                }
+                Some(SearchAction::Abort) => {
+                    debug!("search aborted");
+                    self.abort = true;
+                    return true;
+                },
+                None => { },
+            }
+
+            if !self.pondering {
+                match self.stop_times {
+                    Some((stop_time, _)) if Instant::now() >= stop_time => return true,
+                    _ => return false,
+                }
             }
         }
 
