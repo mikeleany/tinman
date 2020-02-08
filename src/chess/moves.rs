@@ -689,7 +689,7 @@ impl<'a> MoveBuilder {
                     (File::E, File::C) => {
                         if pos.has_queen_side_castling_rights(pos.turn())
                             && rank_attacks(orig, pos.occupied())
-                            .intersects(File::H.into()) {
+                            .intersects(File::A.into()) {
                             move_type = MoveType::Castling;
                         } else {
                             return Err(Error::IllegalMove);
