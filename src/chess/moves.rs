@@ -570,8 +570,11 @@ impl<'a> MoveBuilder {
                 Bishop => { attacks = bishop_attacks(dest, pos.occupied()); },
                 Knight => { attacks = knight_attacks(dest); },
                 Pawn => {
+                    // TODO: handle two-square advancement
                     let forward = if pos.turn() == White { 1 } else { -1 };
                     let rank_mask = Bitboard::from(dest.rank()).shift_y(-forward);
+                    let rank_mask2 = (rank_mask & !pos.occupied()).shift_y(-forward);
+                    let rank_mask = rank_mask | rank_mask2;
                     if let Some(file) = self.orig_file {
                         attacks = rank_mask & file.into();
                     } else {
@@ -688,7 +691,7 @@ impl<'a> MoveBuilder {
                     (File::E, File::C) => {
                         if pos.has_queen_side_castling_rights(pos.turn())
                             && rank_attacks(orig, pos.occupied())
-                            .intersects(File::H.into()) {
+                            .intersects(File::A.into()) {
                             move_type = MoveType::Castling;
                         } else {
                             return Err(Error::IllegalMove);
@@ -852,5 +855,24 @@ mod tests {
             unsafe { transmute::<MoveType, u8>(MoveType::Promotion(ToRook)) });
         println!("{:?} = {}", MoveType::Promotion(ToQueen),
             unsafe { transmute::<MoveType, u8>(MoveType::Promotion(ToQueen)) });
+    }
+
+    #[test]
+    fn validate_e4() -> Result<(), crate::chess::Error> {
+        use crate::chess::{Position, MoveBuilder, ValidMove, Square};
+
+        let pos = Position::default();
+        let mv = "e4".parse::<MoveBuilder>()?
+            .validate(&pos)?;
+
+        assert_eq!(mv.to_string(), "e4".to_string());
+
+        let pos = "r1bqkbnr/pppp1ppp/2n5/8/8/4PN2/PPP1PPPP/RNBQKB1R w KQkq - 1 5".parse()?;
+        let mv = "e4".parse::<MoveBuilder>()?
+            .validate(&pos)?;
+
+        assert_eq!(mv.origin(), Square::E3);
+
+        Ok(())
     }
 }
