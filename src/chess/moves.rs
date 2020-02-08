@@ -570,6 +570,7 @@ impl<'a> MoveBuilder {
                 Bishop => { attacks = bishop_attacks(dest, pos.occupied()); },
                 Knight => { attacks = knight_attacks(dest); },
                 Pawn => {
+                    // TODO: handle two-square advancement
                     let forward = if pos.turn() == White { 1 } else { -1 };
                     let rank_mask = Bitboard::from(dest.rank()).shift_y(-forward);
                     if let Some(file) = self.orig_file {
@@ -852,5 +853,18 @@ mod tests {
             unsafe { transmute::<MoveType, u8>(MoveType::Promotion(ToRook)) });
         println!("{:?} = {}", MoveType::Promotion(ToQueen),
             unsafe { transmute::<MoveType, u8>(MoveType::Promotion(ToQueen)) });
+    }
+
+    #[test]
+    fn validate_e4() -> Result<(), crate::chess::Error> {
+        use crate::chess::{Position, MoveBuilder};
+
+        let pos = Position::default();
+        let mv = "e4".parse::<MoveBuilder>()?
+            .validate(&pos)?;
+
+        assert_eq!(mv.to_string(), "e4".to_string());
+
+        Ok(())
     }
 }
