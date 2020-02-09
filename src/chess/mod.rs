@@ -1,7 +1,7 @@
 //! The `chess` module implements the
 //! [FIDE Laws of Chess](https://www.fide.com/FIDE/handbook/LawsOfChess.pdf).
 //
-//  Copyright 2019 Michael Leany
+//  Copyright 2020 Michael Leany
 //
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
