@@ -226,14 +226,14 @@ impl FromStr for File {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "a"|"A" => Ok(File::A),
-            "b"|"B" => Ok(File::B),
-            "c"|"C" => Ok(File::C),
-            "d"|"D" => Ok(File::D),
-            "e"|"E" => Ok(File::E),
-            "f"|"F" => Ok(File::F),
-            "g"|"G" => Ok(File::G),
-            "h"|"H" => Ok(File::H),
+            "a" => Ok(File::A),
+            "b" => Ok(File::B),
+            "c" => Ok(File::C),
+            "d" => Ok(File::D),
+            "e" => Ok(File::E),
+            "f" => Ok(File::F),
+            "g" => Ok(File::G),
+            "h" => Ok(File::H),
             _       => Err(Error::ParseError),
         }
     }
