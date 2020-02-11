@@ -313,9 +313,11 @@ impl<T> Engine<T> where T: Protocol {
         }
 
         // transposition table lookup
+        let hash_move;
         if let Some(hash) = self.hash.get(pos.zobrist_key(), ply) {
             if hash.depth() >= depth {
                 if hash.score() >= beta && hash.bound() != Bound::Upper {
+                    // TODO: include hash move in pv
                     return Some((hash.score(), pv));
                 } else if hash.score() <= alpha && hash.bound() != Bound::Lower {
                     return Some((hash.score(), pv));
@@ -329,9 +331,11 @@ impl<T> Engine<T> where T: Protocol {
 
                     return Some((hash.score(), pv));
                 }
-            } else {
-                // TODO: search hash move first
             }
+
+            hash_move = hash.best_move().map(|mv| mv.validate(&pos).ok()).flatten();
+        } else {
+            hash_move = None;
         }
 
         // leaf node
@@ -345,7 +349,7 @@ impl<T> Engine<T> where T: Protocol {
 
         // search each move
         let mut best_val = -Score::infinity();
-        for mv in pos.moves() {
+        for mv in hash_move.into_iter().chain(pos.moves()) {
             if self.history.push(mv.into()).is_ok() {
                 if let Some((val, mut new_pv)) = self.search(ply+1, depth-1, -beta, -alpha) {
                     let mv = self.history.pop().expect("INFALLIBLE");
