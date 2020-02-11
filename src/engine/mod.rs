@@ -23,12 +23,15 @@ mod eval;
 use eval::{evaluate, piece_val};
 pub use eval::Score;
 
+mod hash;
+use hash::{HashTable, HashEntry, Bound};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Thinking output
 #[derive(Debug, Clone)]
 pub struct Thinking {
     score: Score,
-    depth: usize,
+    depth: u8,
     time: Duration,
     nodes: u64,
     pv: MoveSequence,
@@ -52,7 +55,7 @@ impl Thinking {
 
     /// Returns the search depth that was reached.
     pub fn depth(&self) -> usize {
-        self.depth
+        self.depth as usize
     }
 
     /// Returns the amount of time used for the search.
@@ -91,29 +94,35 @@ impl Thinking {
 #[derive(Debug)]
 pub struct Engine<T> where T: Protocol {
     protocol: T,
+    hash: HashTable,
 
-    max_depth: Option<usize>,
+    max_depth: Option<u8>,
     start_time: Instant,
     stop_times: Option<(Instant, Instant)>,
     pondering: bool,
     abort: bool,
     nodes: u64,
+    search_count: u16,
 
     history: MoveSequence,
     color: chess::Color,
 }
 
 impl<T> Engine<T> where T: Protocol {
+    const DEFAULT_HASH_SIZE: usize = 0x0100_0000; // default to 16 MB hash
+
     /// Creates a new Engine.
     pub fn new(protocol: T) -> Self {
         Engine {
             protocol,
+            hash: HashTable::new(Self::DEFAULT_HASH_SIZE),
             max_depth: None,
             start_time: Instant::now(),
             stop_times: None,
             pondering: false,
             abort: false,
             nodes: 1,
+            search_count: 0,
             history: MoveSequence::new(),
             color: chess::Color::White,
         }
@@ -208,6 +217,7 @@ impl<T> Engine<T> where T: Protocol {
     fn search_root(&mut self) -> Option<Thinking> {
         let mut thinking = Thinking::new(Arc::clone(self.history.final_position()));
         let mut move_list: VecDeque<MoveSequence> = VecDeque::new();
+        self.search_count += 1;
         self.nodes = 1;
 
         // make and store all legal moves
@@ -227,7 +237,7 @@ impl<T> Engine<T> where T: Protocol {
         // iterative deepening
         let mut best_move = 0;
         let max_depth = if move_list.len() > 1 {
-            self.max_depth.unwrap_or(usize::max_value())
+            self.max_depth.unwrap_or(u8::max_value())
         } else {
             2
         };
@@ -283,7 +293,7 @@ impl<T> Engine<T> where T: Protocol {
     /// looking for a maximum score of `beta` and a minumum score of `alpha`. Returns the score and
     /// principle variation of the best move.
     fn search(&mut self,
-        ply: usize, mut depth: usize,
+        ply: usize, mut depth: u8,
         mut alpha: Score, beta: Score)
     -> Option<(Score, MoveSequence)> {
         let pos = Arc::clone(self.history.final_position());
@@ -300,6 +310,28 @@ impl<T> Engine<T> where T: Protocol {
         // check extension
         if pos.in_check() {
             depth += 1;
+        }
+
+        // transposition table lookup
+        if let Some(hash) = self.hash.get(pos.zobrist_key(), ply) {
+            if hash.depth() >= depth {
+                if hash.score() >= beta && hash.bound() != Bound::Upper {
+                    return Some((hash.score(), pv));
+                } else if hash.score() <= alpha && hash.bound() != Bound::Lower {
+                    return Some((hash.score(), pv));
+                } else if hash.bound() == Bound::Exact {
+                    // alpha < score < beta due to previous conditions
+                    if let Some(mv) = hash.best_move() {
+                        if let Ok(mv) = mv.validate(&pos) {
+                            pv.push(mv.into());
+                        }
+                    }
+
+                    return Some((hash.score(), pv));
+                }
+            } else {
+                // TODO: search hash move first
+            }
         }
 
         // leaf node
@@ -320,6 +352,12 @@ impl<T> Engine<T> where T: Protocol {
                     let val = -val;
 
                     if val >= beta {
+                        let hash_entry = HashEntry::new(
+                            pos.zobrist_key(),
+                            self.search_count, depth,
+                            Bound::Lower, val,
+                            mv.into());
+                        self.hash.insert(hash_entry, ply);
                         return Some((val, pv));
                     }
 
@@ -335,14 +373,33 @@ impl<T> Engine<T> where T: Protocol {
             }
         }
 
-        // no moves found
+        let hash_entry;
         if best_val == -Score::infinity() {
+            // no moves found
             if pos.in_check() {
                 best_val = Score::mated_in(ply);
             } else {
                 best_val = Score::draw();
             }
+            hash_entry = HashEntry::new_without_move(
+                pos.zobrist_key(),
+                self.search_count, depth,
+                Bound::Exact, best_val);
+        } else if let Some(mv) = pv.first() {
+            // pv node
+            hash_entry = HashEntry::new(
+                pos.zobrist_key(),
+                self.search_count, depth,
+                Bound::Exact, best_val,
+                mv.clone().into());
+        } else {
+            // all node
+            hash_entry = HashEntry::new_without_move(
+                pos.zobrist_key(),
+                self.search_count, depth,
+                Bound::Upper, best_val);
         }
+        self.hash.insert(hash_entry, ply);
 
         Some((best_val, pv))
     }

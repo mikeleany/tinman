@@ -13,20 +13,24 @@ use crate::chess::{Color, Piece, Square, Position};
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Score
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Score(isize);
+pub struct Score(i16);
 
 impl Score {
     /// Returns the greatest possible score
     pub fn infinity() -> Self {
-        Score(100_000)
+        Score(10_000)
     }
     /// Returns the score for a draw
     pub fn draw() -> Self {
         Score(0)
     }
+    /// Returns the score for checkmating in `n` plies
+    pub fn mates_in(n: usize) -> Self {
+        Score::infinity() - n as i16
+    }
     /// Returns the score for being checkmated in `n` plies
     pub fn mated_in(n: usize) -> Self {
-        -Score::infinity() + n as isize
+        -Score::infinity() + n as i16
     }
 }
 
@@ -38,49 +42,37 @@ impl ops::Neg for Score {
     }
 }
 
-impl ops::Add<isize> for Score {
+impl ops::Add<i16> for Score {
     type Output = Score;
 
-    fn add(self, rhs: isize) -> Self {
+    fn add(self, rhs: i16) -> Self {
         Score(self.0 + rhs)
     }
 }
 
-impl ops::Sub<isize> for Score {
+impl ops::Sub<i16> for Score {
     type Output = Score;
 
-    fn sub(self, rhs: isize) -> Self {
+    fn sub(self, rhs: i16) -> Self {
         Score(self.0 - rhs)
     }
 }
 
-impl From<isize> for Score {
-    fn from(val: isize) -> Self {
+impl From<i16> for Score {
+    fn from(val: i16) -> Self {
         Score(val)
-    }
-}
-
-impl From<Score> for isize {
-    fn from(val: Score) -> Self {
-        val.0
     }
 }
 
 impl From<Score> for i16 {
     fn from(val: Score) -> Self {
-        if val.0 < 10_000 {
-            -10_000 + (Score::infinity().0 + val.0) as i16
-        } else if val.0 > i16::max_value() as isize {
-            10_000 - (Score::infinity().0 - val.0) as i16
-        } else {
-            val.0 as i16
-        }
+        val.0
     }
 }
 
-const PIECE_VAL: [isize; Piece::COUNT] = [ 100, 320, 330, 500, 1000, 0 ];
+const PIECE_VAL: [i16; Piece::COUNT] = [ 100, 320, 330, 500, 1000, 0 ];
 
-const PIECE_SQUARE_VAL: [[isize; Square::COUNT]; Piece::COUNT] = [
+const PIECE_SQUARE_VAL: [[i16; Square::COUNT]; Piece::COUNT] = [
     [ // Pawn
       //  1    2    3    4    5    6    7    8
           0,   5,   4,  -5,   5,  10,  70,   0, // a
@@ -129,7 +121,7 @@ const PIECE_SQUARE_VAL: [[isize; Square::COUNT]; Piece::COUNT] = [
     [ 0; Square::COUNT ], // King
 ];
 
-const MID_KING_TABLE: [isize; Square::COUNT] =  [
+const MID_KING_TABLE: [i16; Square::COUNT] =  [
     //  1    2    3    4    5    6    7    8
      20,  10, -10, -30, -40, -50, -60, -70, // a
      30,  10, -20, -30, -40, -50, -60, -70, // b
@@ -141,7 +133,7 @@ const MID_KING_TABLE: [isize; Square::COUNT] =  [
      20,  10, -10, -30, -40, -50, -60, -70, // h
 ];  
 
-const END_KING_TABLE: [isize; Square::COUNT] =  [
+const END_KING_TABLE: [i16; Square::COUNT] =  [
     //  1    2    3    4    5    6    7    8
     -50, -40, -30, -20, -20, -30, -40, -50, // a
     -40, -30, -20, -10, -10, -20, -30, -40, // b
@@ -155,7 +147,7 @@ const END_KING_TABLE: [isize; Square::COUNT] =  [
 
 
 /// Returns the value of a piece.
-pub fn piece_val(piece: Piece) -> isize {
+pub fn piece_val(piece: Piece) -> i16 {
     PIECE_VAL[piece as usize]
 }
 
@@ -175,7 +167,7 @@ pub fn evaluate(pos: &Position) -> Score {
                     + PIECE_SQUARE_VAL[piece as usize][sq as usize];
 
             }
-            total_piece_val += pos.occupied_by_piece(color, piece).len() as isize
+            total_piece_val += pos.occupied_by_piece(color, piece).len() as i16
                 * PIECE_VAL[piece as usize];
         }
     }

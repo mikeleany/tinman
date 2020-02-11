@@ -972,7 +972,7 @@ pub enum Response {
         /// The depth of the current search
         depth: usize,
         /// The value of the current line of thinking
-        score: isize,
+        score: i16,
         /// The amount of time spent thinking on this position (including pondering)
         time: Duration,
         /// The number of nodes searched
