@@ -17,7 +17,7 @@ use log::debug;
 use crate::chess;
 use chess::{Position, ValidMove, Piece};
 use chess::game::{MoveSequence, TimeControl};
-use crate::protocol::{Protocol, SearchAction};
+use crate::protocol::{Protocol, Action, SearchAction};
 
 mod eval;
 use eval::{evaluate, piece_val};
@@ -96,7 +96,6 @@ pub struct Engine<T> where T: Protocol {
     protocol: T,
     hash: HashTable,
 
-    max_depth: Option<u8>,
     start_time: Instant,
     stop_times: Option<(Instant, Instant)>,
     pondering: bool,
@@ -109,14 +108,13 @@ pub struct Engine<T> where T: Protocol {
 }
 
 impl<T> Engine<T> where T: Protocol {
-    const DEFAULT_HASH_SIZE: usize = 0x0100_0000; // default to 16 MB hash
+    const DEFAULT_HASH_SIZE: usize = 0x0000_1000_0000; // default to 256 MB hash
 
     /// Creates a new Engine.
     pub fn new(protocol: T) -> Self {
         Engine {
             protocol,
             hash: HashTable::new(Self::DEFAULT_HASH_SIZE),
-            max_depth: None,
             start_time: Instant::now(),
             stop_times: None,
             pondering: false,
@@ -134,34 +132,47 @@ impl<T> Engine<T> where T: Protocol {
     ///
     /// Panics if a ponder move returned by the protocol, is not legal.
     pub fn run(&mut self) {
-        while self.protocol.wait_for_search() {
-            self.start_time = Instant::now();
-            self.abort = false;
+        loop {
+            match self.protocol.wait_for_direction() {
+                Action::Search => {
+                    self.start_time = Instant::now();
+                    self.abort = false;
 
-            self.history = self.protocol.game().history().clone();
+                    self.history = self.protocol.game().history().clone();
 
-            if let Some(mv) = self.protocol.ponder_move() {
-                self.pondering = true;
-                self.history.push(mv.clone()).expect("Ponder move must be legal");
-                debug!("pondering");
-            } else {
-                self.pondering = false;
-                self.calc_search_time();
-            }
-            self.color = self.history.final_position().turn();
-
-            if let Some(thinking) = self.search_root() {
-                if self.pondering {
-                    loop {
-                        match self.protocol.check_input() {
-                            Some(SearchAction::Abort) => { },
-                            Some(_) => self.protocol.send_move(&thinking),
-                            None => { continue },
-                        }
-                        break;
+                    if let Some(mv) = self.protocol.ponder_move() {
+                        self.pondering = true;
+                        self.history.push(mv.clone()).expect("Ponder move must be legal");
+                        debug!("pondering");
+                    } else {
+                        self.pondering = false;
+                        self.calc_search_time();
                     }
-                } else {
-                    self.protocol.send_move(&thinking);
+                    self.color = self.history.final_position().turn();
+
+                    if let Some(thinking) = self.search_root() {
+                        if self.pondering {
+                            loop {
+                                match self.protocol.check_input() {
+                                    Some(SearchAction::Abort) => { },
+                                    Some(_) => self.protocol.send_move(&thinking),
+                                    None => { continue },
+                                }
+                                break;
+                            }
+                        } else {
+                            self.protocol.send_move(&thinking);
+                        }
+                    }
+                },
+                Action::HashSize(size) => {
+                    self.hash.resize(size);
+                },
+                Action::ClearHash => {
+                    self.hash.clear();
+                },
+                Action::Quit => {
+                    return;
                 }
             }
         }
@@ -237,7 +248,11 @@ impl<T> Engine<T> where T: Protocol {
         // iterative deepening
         let mut best_move = 0;
         let max_depth = if move_list.len() > 1 {
-            self.max_depth.unwrap_or(u8::max_value())
+            if let Some(depth) = self.protocol.max_depth() {
+                depth.try_into().unwrap_or(u8::max_value())
+            } else {
+                u8::max_value()
+            }
         } else {
             2
         };

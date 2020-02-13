@@ -159,9 +159,9 @@ impl HashTable {
 
     pub fn new(size: usize) -> HashTable {
         let size = (size/2).next_power_of_two();
-        let elems = size/size_of::<BucketList>();
+        let len = size/size_of::<BucketList>();
 
-        HashTable(vec![[None; Self::BUCKETS]; elems])
+        HashTable(vec![[None; Self::BUCKETS]; len])
     }
 
     pub fn get(&self, zobrist: Zobrist, cur_ply: usize) -> Option<HashEntry> {
@@ -223,6 +223,15 @@ impl HashTable {
         let len = self.0.len();
         self.0.clear();
         self.0.resize(len, [None; Self::BUCKETS]);
+    }
+
+    pub fn resize(&mut self, size: usize) {
+        let size = (size/2).next_power_of_two();
+        let len = size/size_of::<BucketList>();
+
+        self.0.clear();
+        self.0.resize(len, [None; Self::BUCKETS]);
+        self.0.shrink_to_fit();
     }
 }
 
