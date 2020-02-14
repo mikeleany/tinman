@@ -171,9 +171,9 @@ impl HashTable {
             match self.0[index][bucket] {
                 Some(mut entry) if zobrist == entry.zobrist => {
                     if entry.score >= Score::mates_in(1_000) {
-                        entry.score = entry.score + cur_ply as i16;
-                    } else if entry.score <= Score::mated_in(1_000) {
                         entry.score = entry.score - cur_ply as i16;
+                    } else if entry.score <= Score::mated_in(1_000) {
+                        entry.score = entry.score + cur_ply as i16;
                     }
 
                     return Some(entry);
@@ -189,9 +189,9 @@ impl HashTable {
         let index = u64::from(new_entry.zobrist) as usize & (self.0.len() - 1);
 
         if new_entry.score >= Score::mates_in(1_000) {
-            new_entry.score = new_entry.score - cur_ply as i16;
-        } else if new_entry.score <= Score::mated_in(1_000) {
             new_entry.score = new_entry.score + cur_ply as i16;
+        } else if new_entry.score <= Score::mated_in(1_000) {
+            new_entry.score = new_entry.score - cur_ply as i16;
         }
 
         let mut draft = 0;
