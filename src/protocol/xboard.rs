@@ -192,7 +192,7 @@ impl Protocol for Xboard {
                             self.max_depth = Some(depth);
                         },
                         Memory(size) => {
-                            return Action::HashSize(size);
+                            return Action::HashSize(size * 0x10_0000);
                         },
                         Post => {
                             self.post_thinking = true;
