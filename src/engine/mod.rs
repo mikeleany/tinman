@@ -292,6 +292,16 @@ impl<T> Engine<T> where T: Protocol {
                 }
             }
 
+            for (i, mv) in thinking.pv.iter().enumerate() {
+                let depth = thinking.depth - i as u8;
+                let hash_entry = HashEntry::new(
+                    mv.position().zobrist_key(),
+                    self.search_count, depth,
+                    Bound::Exact, thinking.score,
+                    mv.clone().into());
+                self.hash.insert(hash_entry, i);
+            }
+
             thinking.depth = depth;
             thinking.time = self.start_time.elapsed();
             thinking.nodes = self.nodes;
