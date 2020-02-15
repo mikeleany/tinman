@@ -40,7 +40,7 @@ impl HashMove {
         }
     }
 
-    pub fn validate<'a>(&self, pos: &'a Position) -> Result<Move<'a>> {
+    pub fn validate<'a>(self, pos: &'a Position) -> Result<Move<'a>> {
         MoveBuilder::new()
             .origin(self.origin())
             .destination(self.destination())
@@ -121,14 +121,6 @@ impl HashEntry {
             score,
             best_move: None,
         }
-    }
-
-    pub fn zobrist(&self) -> Zobrist {
-        self.zobrist
-    }
-
-    pub fn when(&self) -> u16 {
-        self.when
     }
 
     pub fn depth(&self) -> u8 {

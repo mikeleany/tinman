@@ -217,7 +217,7 @@ impl Protocol for Xboard {
                 }
             } else {
                 error!("input error");
-                unimplemented!()
+                self.state = State::Quitting;
             }
         }
 

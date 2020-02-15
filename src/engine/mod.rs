@@ -341,16 +341,14 @@ impl<T> Engine<T> where T: Protocol {
         let hash_move;
         if let Some(hash) = self.hash.get(pos.zobrist_key(), ply) {
             if hash.depth() >= depth {
-                if hash.score() >= beta && hash.bound() != Bound::Upper {
-                    // TODO: include hash move in pv
-                    return Some((hash.score(), pv));
-                } else if hash.score() <= alpha && hash.bound() != Bound::Lower {
+                if (hash.score() >= beta && hash.bound() != Bound::Upper)
+                || (hash.score() <= alpha && hash.bound() != Bound::Lower) {
                     return Some((hash.score(), pv));
                 } else if hash.bound() == Bound::Exact {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
                         if let Ok(mv) = mv.validate(&pos) {
-                            pv.push(mv.into());
+                            pv.push(mv.into()).expect("INFALLIBLE");
                         }
                     }
 
