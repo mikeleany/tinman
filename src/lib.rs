@@ -24,7 +24,8 @@
 //!    specified depth.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 #![warn(missing_docs, missing_debug_implementations, unused_extern_crates)]
-#![warn(clippy::unimplemented, clippy::option_unwrap_used, clippy::result_unwrap_used)]
+#![warn(clippy::unimplemented, clippy::todo)]
+#![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
 
 pub mod chess;
 pub mod engine;

@@ -12,6 +12,20 @@ use crate::chess::game::Game;
 use crate::chess::ArcMove;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+/// An action that should between searches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// The engine should exit.
+    Quit,
+    /// The engine should search the current position.
+    Search,
+    /// The engine should adjust the size of the transposition table, (given in bytes).
+    HashSize(usize),
+    /// The engine should clear the transposition table.
+    ClearHash,
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An action that should be taken regarding the current search.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SearchAction {
@@ -31,10 +45,10 @@ pub enum SearchAction {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Trait used for structures that implement the engine side of a chess protocol
 pub trait Protocol {
-    /// Waits until the engine should begin searching or should exit.
+    /// Waits for the next action the engine should take.
     ///
-    /// Returns true if the engine should begin searching, or false if it should exit.
-    fn wait_for_search(&mut self) -> bool where Self: Sized;
+    /// Returns the next action that the engine should take.
+    fn wait_for_direction(&mut self) -> Action;
 
     /// Sends the engine's move to the client. If supported by the protocol, the engine's request to
     /// resign, claim a draw, or offer a draw should be carried out. 
@@ -60,6 +74,9 @@ pub trait Protocol {
 
     /// Returns the current ponder move, if any.
     fn ponder_move(&self) -> Option<&ArcMove>;
+
+    /// Returns the maximum search depth (if any)
+    fn max_depth(&self) -> Option<usize>;
 }
 
 pub mod io;

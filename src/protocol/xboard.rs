@@ -16,7 +16,7 @@ use std::sync::mpsc::TryRecvError;
 use log::{debug, info, error};
 use lazy_static::lazy_static;
 use regex::{RegexSet, Regex};
-use super::{Protocol, SearchAction, io};
+use super::{Protocol, Action, SearchAction, io};
 use crate::chess;
 use crate::chess::game::{Game, TimeControl};
 use crate::engine::Thinking;
@@ -43,6 +43,7 @@ pub struct Xboard {
     color: Option<chess::Color>,
     post_thinking: bool,
     can_ponder: bool,
+    max_depth: Option<usize>,
 
     ponder_hits: usize,
     ponder_total: usize,
@@ -58,6 +59,7 @@ impl Xboard {
             color: Some(chess::Color::Black),
             post_thinking: true,
             can_ponder: true,
+            max_depth: None,
             ponder_hits: 0,
             ponder_total: 0,
         }
@@ -66,7 +68,7 @@ impl Xboard {
 
 impl Protocol for Xboard {
 
-    fn wait_for_search(&mut self) -> bool {
+    fn wait_for_direction(&mut self) -> Action {
         use Command::*;
 
         while self.state == State::Idle {
@@ -86,6 +88,7 @@ impl Protocol for Xboard {
                                 Debug(true),
                                 Nps(false),
                                 Analyze(false),
+                                Memory(true),
                             ]).send();
                             Response::Feature(vec![Done(true)]).send();
                         },
@@ -98,10 +101,12 @@ impl Protocol for Xboard {
                         },
                         Quit => {
                             self.state = State::Quitting;
+                            return Action::Quit;
                         },
                         New => {
                             self.game = Game::new();
                             self.color = Some(chess::Color::Black);
+                            self.max_depth = None;
                         },
                         Force => {
                             self.color = None;
@@ -183,11 +188,11 @@ impl Protocol for Xboard {
                         SetTime(time) => {
                             self.game.set_time_control(TimeControl::Exact(time));
                         },
-                        SetDepth(_depth) => {
-                            // TODO: set maximum search depth
+                        SetDepth(depth) => {
+                            self.max_depth = Some(depth);
                         },
-                        Memory(_size) => {
-                            // TODO: set hash table size
+                        Memory(size) => {
+                            return Action::HashSize(size * 0x10_0000);
                         },
                         Post => {
                             self.post_thinking = true;
@@ -202,7 +207,8 @@ impl Protocol for Xboard {
                             self.can_ponder = false;
                         },
                         Hint => {
-                            // ignored
+                            Response::ErrorMessage(line.clone(),
+                                "You're on your own on this one".to_string()).send();
                         },
                     }
                 } else {
@@ -211,11 +217,15 @@ impl Protocol for Xboard {
                 }
             } else {
                 error!("input error");
-                unimplemented!()
+                self.state = State::Quitting;
             }
         }
 
-        self.state != State::Quitting
+        if self.state == State::Quitting {
+            Action::Quit
+        } else {
+            Action::Search
+        }
     }
 
     fn send_move(&mut self, thinking: &Thinking) {
@@ -286,6 +296,7 @@ impl Protocol for Xboard {
                         New => {
                             self.game = Game::new();
                             self.state = State::Idle;
+                            self.max_depth = None;
                             return Some(SearchAction::Abort);
                         },
                         Force => {
@@ -391,11 +402,15 @@ impl Protocol for Xboard {
                         SetTime(time) => {
                             self.game.set_time_control(TimeControl::Exact(time));
                         },
-                        SetDepth(_depth) => {
-                            // TODO: set maximum search depth
+                        SetDepth(_) => {
+                            Response::ErrorMessage(line.clone(),
+                                "cannot change search depth while thinking".to_string())
+                                .send();
                         },
-                        Memory(_size) => {
-                            // TODO: set hash table size
+                        Memory(_) => {
+                            Response::ErrorMessage(line.clone(),
+                                "cannot change hash size in while thinking".to_string())
+                                .send();
                         },
                         Post => {
                             self.post_thinking = true;
@@ -416,6 +431,9 @@ impl Protocol for Xboard {
                         Hint => {
                             if let State::Pondering(mv) = &self.state {
                                 Response::Hint(format!("{:#}", mv)).send();
+                            } else {
+                                Response::ErrorMessage(line.clone(),
+                                    "it's not your turn".to_string()).send();
                             }
                         },
                         _ => { },
@@ -446,6 +464,10 @@ impl Protocol for Xboard {
         } else {
             None
         }
+    }
+
+    fn max_depth(&self) -> Option<usize> {
+        self.max_depth
     }
 }
 
@@ -972,7 +994,7 @@ pub enum Response {
         /// The depth of the current search
         depth: usize,
         /// The value of the current line of thinking
-        score: isize,
+        score: i16,
         /// The amount of time spent thinking on this position (including pondering)
         time: Duration,
         /// The number of nodes searched
@@ -1166,7 +1188,7 @@ pub enum Feature{
     MyName(String),
     /// Enables the `memory` command. Defaults to `false`. Should always be set to `true` unless no
     /// hash table is used.
-    Memory(usize),
+    Memory(bool),
     /// Enables the use of the `cores` command. Defaults to `false`. Should be set to `true` for
     /// engines with parallel search.
     Smp(bool),
@@ -1212,7 +1234,7 @@ impl fmt::Display for Feature {
             Ping(val) => format!("ping={}", *val as usize).fmt(f),
             SetBoard(val) => format!("setboard={}", *val as usize).fmt(f),
             MyName(val) => format!("myname={}", val).fmt(f),
-            Memory(val) => format!("memory={}", val).fmt(f),
+            Memory(val) => format!("memory={}", *val as usize).fmt(f),
             Smp(val) => format!("smp={}", *val as usize).fmt(f),
             Egt(_) => unimplemented!(),
             Reuse(val) => format!("reuse={}", *val as usize).fmt(f),
