@@ -28,5 +28,6 @@
 #![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
 
 pub mod chess;
-pub mod engine;
 pub mod protocol;
+pub mod engine;
+pub mod client;
