@@ -7,6 +7,7 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+use std::sync::Arc;
 use crate::protocol::io;
 use crate::chess;
 use chess::game::{Game, TimeControl, MoveSequence};
@@ -19,10 +20,6 @@ pub enum EngineResponse {
     /// The engine plays the given move.
     Move(chess::ArcMove),
 
-    /// The engine plays the given move and claims a draw. The engine must be able to continue
-    /// playing if the draw claim is rejected.
-    ClaimDraw(chess::ArcMove),
-
     /// The engine resigns. No move is played.
     Resignation,
 
@@ -33,55 +30,120 @@ pub enum EngineResponse {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Trait for engine interfaces.
 pub trait EngineInterface {
-    /// The engine should prepare for a new game with the starting conditions given by `game`.
+    /// The engine should prepare for a new game with the time control, initial position, and moves
+    /// given in `game`. The caller must guarantee that the time control is not infinite.
+    ///
+    /// # Panics
+    /// The implementation may panic if the guarantees are not met.
     fn new_game(&mut self, game: &Game);
 
-    /// The engine should update it's internal state to match `game` and give a response within the
-    /// available time for the player on move.
+    /// The engine should update it's board to include any moves in `game` that it has not already
+    /// seen. The caller must guarantee that no previous moves have been undone.
+    ///
+    /// # Panics
+    /// The implementation may panic if the guarantees are not met.
+    fn send_moves(&mut self, game: &Game);
+
+    /// The engine should give a response within the available time for the player on move. The
+    /// caller must guarantee that all moves in `game` have already been seen by the engine and that
+    /// no moves have been undone.
+    ///
+    /// # Panics
+    /// The implementation may panic if the guarantees are not met.
     fn go(&mut self, game: &Game) -> EngineResponse;
 
-    /// Provides the engine with final updates on the game state.
+    /// The engine should make the last move in `game` and give a response within the available time
+    /// for the player next player. The caller must guarantee the last, and only the last move has
+    /// not yet been seen by the engine and that no moves have been undone.
+    ///
+    /// # Panics
+    /// The implementation may panic if the guarantees are not met.
+    fn send_move_and_go(&mut self, game: &Game) -> EngineResponse;
+
+    /// Sends the result of the game to the engine. The caller must guarantee that all moves have
+    /// already been seen by the engine and that no moves have been undone.
+    ///
+    /// # Panics
+    /// The implementation may panic if the guarantees are not met.
     fn result(&mut self, game: &Game);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A structure which allows one or more games between two engines.
-pub struct Match<'a> {
-    engine: [&'a mut EngineInterface; 2],
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GameSetup<> {
     tc: TimeControl,
     opening: MoveSequence,
 }
 
-impl<'a> Match<'a> {
-    pub fn new(white: &'a mut EngineInterface, black: &'a mut EngineInterface) -> Self {
-        unimplemented!()
+impl GameSetup {
+    pub fn new() -> Self {
+        GameSetup{
+            tc: TimeControl::default(),
+            opening: MoveSequence::default(),
+        }
     }
 
     pub fn time_control(&mut self, tc: TimeControl) -> &Self {
-        unimplemented!()
+        self.tc = tc;
+
+        self
     }
 
     pub fn initial_pos(&mut self, pos: chess::Position) -> &Self {
-        unimplemented!()
+        self.opening = MoveSequence::starting_at(Arc::new(pos));
+
+        self
     }
 
     pub fn opening(&mut self, moves: MoveSequence) -> &Self {
-        unimplemented!()
+        self.opening = moves;
+
+        self
     }
 
-    pub fn play_game(&mut self) -> Game {
-        unimplemented!()
+    pub fn play_game(&self,
+        white: &mut dyn EngineInterface,
+        black: &mut dyn EngineInterface)
+    -> Game {
+        let mut game = Game::starting_at(self.opening.initial_position().as_ref().to_owned());
+        game.set_time_control(self.tc);
+        for mv in self.opening.iter() {
+            game.make_move(mv.to_owned());
+        }
 
-        // for each engine
-            // begin new game
+        white.new_game(&game);
+        black.new_game(&game);
 
-        // until game over
-            // send updates to engine on move
-            // until the user moves
-                // wait for response (with timeout)
-                // parse response
-            // make move on board
+        let response = if game.position().turn() == chess::Color::White {
+            white.go(&game)
+        } else {
+            black.go(&game)
+        };
+        match response {
+            EngineResponse::Move(mv) => {
+                game.make_move(mv);
+            },
+            _ => { todo!() },
+        }
 
-        // return game
+        while game.result().is_none() {
+            let response = if game.position().turn() == chess::Color::White {
+                white.send_move_and_go(&game)
+            } else {
+                black.send_move_and_go(&game)
+            };
+            match response {
+                EngineResponse::Move(mv) => {
+                    game.make_move(mv);
+                },
+                _ => { todo!() },
+            }
+        }
+
+        white.result(&game);
+        black.result(&game);
+
+        game
     }
 }

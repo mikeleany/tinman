@@ -12,6 +12,7 @@ use std::io::{Write, BufRead, BufReader};
 use std::thread;
 use std::sync::mpsc::*;
 use std::process::{Command, Stdio, Child, ChildStdout, ChildStdin};
+use std::ffi::OsStr;
 use log::{info, error};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -95,9 +96,10 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Launches an engine using the given command. Returns and interface to communicate with the
+    /// Launches an engine using the given command. Returns an interface to communicate with the
     /// engine.
-    pub fn launch(cmd: &str, args: &[&str], id: &str) -> std::io::Result<Engine> {
+    pub fn launch<T, U>(cmd: T, args: &[U], id: &str)
+    -> std::io::Result<Self> where T: AsRef<OsStr>, U: AsRef<OsStr> {
         let id = id.to_string();
 
         let mut child = Command::new(cmd)
