@@ -751,6 +751,16 @@ impl FromStr for MoveBuilder {
             return Err(Error::ParseError);
         };
 
+        // remove check or checkmate characters
+        if c == "+" || c == "#" {
+            next = chars.next_back();
+            c = if let Some(c) = next {
+                c.to_string()
+            } else {
+                return Err(Error::ParseError);
+            };
+        }
+
         // promotion piece
         let prom_pc = match c.as_str() {
             "Q" | "q" => Some(Promotion::ToQueen),

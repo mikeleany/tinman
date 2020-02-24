@@ -573,7 +573,6 @@ impl XboardClient {
                                     if feature.value == FeatureValue::Int(1) {
                                         self.send(&Command::Accepted(feature.name));
                                     } else {
-                                        // TODO: support reuse=0
                                         self.send(&Command::Rejected(feature.name));
                                     }
                                 },
@@ -582,7 +581,6 @@ impl XboardClient {
                                     if feature.value == FeatureValue::Int(1) {
                                         self.send(&Command::Accepted(feature.name));
                                     } else {
-                                        // TODO: support reuse=0
                                         self.send(&Command::Rejected(feature.name));
                                     }
                                 },
@@ -666,7 +664,6 @@ impl Drop for XboardClient {
     fn drop(&mut self) {
         self.send(&Command::Quit);
         std::thread::yield_now()
-        // TODO: kill the engine if it doesn't exit on its own after a short time
     }
 }
 

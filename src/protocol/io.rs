@@ -12,6 +12,7 @@ use std::io::{Write, BufRead, BufReader};
 use std::thread;
 use std::sync::mpsc::*;
 use std::process::{Command, Stdio, Child, ChildStdout, ChildStdin};
+use std::time::{Duration, Instant};
 use std::ffi::OsStr;
 use log::{info, error};
 
@@ -87,7 +88,6 @@ impl Client {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Provides a means of communication with an engine.
-// TODO: reap the engine thread and process when the engine is dropped
 #[derive(Debug)]
 pub struct Engine {
     recv: Receiver<String>,
@@ -115,7 +115,6 @@ impl Engine {
 
         let (sender, receiver) = channel();
 
-        // TODO: save the handle to the thread to kill it when the engine is dropped
         thread::spawn(move || {
             Self::thread(child_stdout, sender, id);
         });
@@ -179,5 +178,21 @@ impl Engine {
                 },
             }
         }
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let kill_time = Instant::now() + Duration::from_secs(1);
+
+        while Instant::now() < kill_time {
+            if let Ok(Some(_)) = self.proc.try_wait() {
+                return;
+            }
+            std::thread::yield_now()
+        }
+
+        self.proc.kill();
+        while self.proc.wait().is_err() { }
     }
 }

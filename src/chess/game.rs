@@ -289,8 +289,34 @@ impl fmt::Display for MoveSequence {
                 s += &format!("{} ", mv);
             }
         }
+        s.pop(); // remove space from end of string
 
         s.fmt(f)
+    }
+}
+
+impl FromStr for MoveSequence {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<MoveSequence> {
+        let re = regex::Regex::new(r"\s+|\s*\d+\s*\.\s*").expect("regex error");
+        let mut seq = MoveSequence::new();
+
+        for mv in re.split(s) {
+            if mv.is_empty()
+                || mv.starts_with("*")
+                || mv.starts_with("1-0")
+                || mv.starts_with("0-1")
+                || mv.starts_with("1/2-1/2") {
+                continue;
+            }
+
+            let pos = seq.final_position();
+            let mv = mv.parse::<MoveBuilder>()?.validate(&pos)?;
+            seq.push(mv.into())?;
+        }
+
+        Ok(seq)
     }
 }
 

@@ -8,6 +8,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::sync::Arc;
+use std::time::Instant;
 use crate::protocol::io;
 use crate::chess;
 use chess::game::{Game, TimeControl, MoveSequence};
@@ -115,6 +116,7 @@ impl GameSetup {
         white.new_game(&game);
         black.new_game(&game);
 
+        let start = Instant::now();
         let response = if game.position().turn() == chess::Color::White {
             white.go(&game)
         } else {
@@ -122,12 +124,13 @@ impl GameSetup {
         };
         match response {
             EngineResponse::Move(mv) => {
-                game.make_move(mv);
+                game.make_move_timed(mv, Instant::now() - start);
             },
             _ => { todo!() },
         }
 
         while game.result().is_none() {
+            let start = Instant::now();
             let response = if game.position().turn() == chess::Color::White {
                 white.send_move_and_go(&game)
             } else {
@@ -135,7 +138,7 @@ impl GameSetup {
             };
             match response {
                 EngineResponse::Move(mv) => {
-                    game.make_move(mv);
+                    game.make_move_timed(mv, Instant::now() - start);
                 },
                 _ => { todo!() },
             }
