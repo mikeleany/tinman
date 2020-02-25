@@ -660,6 +660,9 @@ impl Game {
         if self.position().fifty_moves() {
             self.result = Some(GameResult::Draw(Some(DrawReason::FiftyMoves)));
             return;
+        } else if self.position().insufficient_material() {
+            self.result = Some(GameResult::Draw(Some(DrawReason::Material)));
+            return;
         } else if self.moves.three_fold_repetition() {
             self.result = Some(GameResult::Draw(Some(DrawReason::Repetition)));
             return;

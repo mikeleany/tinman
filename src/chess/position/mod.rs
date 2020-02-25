@@ -414,6 +414,25 @@ impl Position {
         self.zobrist
     }
 
+    /// Returns `true` if there is insufficient material for checkmate.
+    pub fn insufficient_material(&self) -> bool {
+        if self.occ_squares.len() == 2 {
+            return true;
+        } else if self.occ_squares.len() == 3 {
+            let bishops_and_knights =
+                  self.occupied_by_piece(White, Knight)
+                | self.occupied_by_piece(Black, Knight)
+                | self.occupied_by_piece(White, Bishop)
+                | self.occupied_by_piece(Black, Bishop);
+
+            if !bishops_and_knights.is_empty() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Returns an iterator over valid (pseudo-legal) moves from this position.
     ///
     /// Note that the iterator does not validate if the moves leave the mover in check or if they
