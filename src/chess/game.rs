@@ -14,6 +14,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use std::time::Duration;
 use std::convert::TryInto;
+use std::collections::HashMap;
 use super::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -680,5 +681,65 @@ impl Game {
         } else {
             self.result = Some(GameResult::Draw(Some(DrawReason::Stalemate)));
         }
+    }
+
+    pub fn to_pgn(&self, tags: &HashMap<String, String>) -> String {
+        let mut tags = tags.to_owned();
+
+        if self.moves.initial_position().zobrist_key() != Position::default().zobrist_key() {
+            tags.insert("SetUp".to_owned(), "1".to_owned());
+            tags.insert("FEN".to_owned(), self.moves.initial_position().to_string());
+        }
+
+        let result = match self.result {
+            Some(GameResult::Win(Color::White, _)) => "1-0",
+            Some(GameResult::Win(Color::Black, _)) => "0-1",
+            Some(GameResult::Draw(_)) => "1/2-1/2",
+            _ => "*",
+        };
+        tags.insert("Result".to_owned(), result.to_owned());
+
+        let mut tag_list = String::new();
+        for &name in &["Event", "Site", "Date", "Round", "White", "Black", "Result"] {
+            let value = match (name, tags.remove(name)) {
+                (_, Some(value)) => value,
+                ("Date", None) => "????.??.??".to_owned(),
+                (_, None) => "?".to_owned(),
+            };
+
+            tag_list += &format!("[{} \"{}\"]\n", name, value);
+        }
+
+        let mut names: Vec<_> = tags.keys().collect();
+        names.sort_unstable();
+
+        for name in names {
+            tag_list += &format!("[{} \"{}\"]\n", name, tags[name]);
+        }
+
+        let result = if let Some(result) = self.result {
+            result.to_string()
+        } else {
+            "*".to_owned()
+        };
+
+        let mut move_text = String::new();
+        let mut width = 0;
+        for word in format!("{:+} {}", self.moves, result).split(' ') {
+            // split into lines of no more than than 80 BYTES each
+            if width + word.len() < 80 && width > 0 {
+                move_text += " ";
+                width += 1;
+            } else if width > 0{
+                move_text += "\n";
+                width = 0;
+            }
+            move_text += word;
+            width += word.len();
+        }
+
+        let pgn = format!("{}\n{}\n", tag_list, move_text);
+
+        pgn
     }
 }

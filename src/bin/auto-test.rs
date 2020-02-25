@@ -8,12 +8,14 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::path::{Path, PathBuf};
-use std::fs::{read_to_string, write, create_dir};
+use std::fs::{read_to_string, write, create_dir, OpenOptions};
+use std::io::Write;
 use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
 use clap::{App, Arg, SubCommand, AppSettings, crate_version};
 use rand::Rng;
+use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
 use tinman::client::{EngineInterface, GameSetup};
 use tinman::chess::game::{MoveSequence, TimeControl};
@@ -203,14 +205,38 @@ fn main() -> Result<(), Error> {
                     &opponent[1..],
                     &opp_name).unwrap();
 
+                let mut pgn_tags = HashMap::new();
+                pgn_tags.insert("Event".to_owned(), "Automated testing".to_owned());
+                if let Ok(hostname) = hostname::get() {
+                    if let Ok(hostname) = hostname.into_string() {
+                        pgn_tags.insert("Site".to_owned(), hostname);
+                    }
+                }
+                pgn_tags.insert("Date".to_owned(), Local::today().format("%Y.%m.%d").to_string());
+                pgn_tags.insert("Round".to_owned(), "-".to_owned());
+                pgn_tags.insert("TestOpening".to_owned(), opening.to_owned());
+
+                pgn_tags.insert("White".to_owned(), eng_name.to_owned());
+                pgn_tags.insert("Black".to_owned(), opp_name.to_owned());
                 println!("{} vs {} ({:#})", eng_name, opp_name, opening);
-                game_setup.play_game(&mut eng, &mut opp);
+                let pgn_white = game_setup.play_game(&mut eng, &mut opp).to_pgn(&pgn_tags);
+                println!("{}", pgn_white);
+
+                pgn_tags.insert("White".to_owned(), opp_name.to_owned());
+                pgn_tags.insert("Black".to_owned(), eng_name.to_owned());
                 println!("{} vs {} ({:#})", opp_name, eng_name, opening);
-                game_setup.play_game(&mut opp, &mut eng);
+                let pgn_black = game_setup.play_game(&mut opp, &mut eng).to_pgn(&pgn_tags);
+                println!("{}", pgn_black);
+
+                // write games to engine's pgn file
+                let pgn_file = games_dir.join(eng_name).with_extension("pgn");
+                let mut pgn_file = OpenOptions::new()
+                    .append(true)
+                    .create(true) // create if doesn't already exist
+                    .open(pgn_file)?;
+                write!(pgn_file, "{}\n{}\n", pgn_white, pgn_black);
 
                 // TODO:
-                // append games to the appropriate pgn based on candidate engine
-                // update the games-played file
                 // if any input files have changed, re-read them
             }
         },
