@@ -229,7 +229,7 @@ fn main() -> Result<(), Error> {
                 println!("{}", pgn_black);
 
                 // write games to engine's pgn file
-                let pgn_file = games_dir.join(eng_name).with_extension("pgn");
+                let pgn_file = games_dir.join(eng_name.to_owned() + ".pgn");
                 let mut pgn_file = OpenOptions::new()
                     .append(true)
                     .create(true) // create if doesn't already exist
