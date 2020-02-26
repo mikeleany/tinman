@@ -8,12 +8,13 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::path::{Path, PathBuf};
-use std::fs::{read_to_string, write, create_dir, OpenOptions};
+use std::fs::{read_to_string, write, create_dir, File, OpenOptions};
 use std::io::Write;
 use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
 use clap::{App, Arg, SubCommand, AppSettings, crate_version};
+use simplelog::{WriteLogger, LevelFilter, Config};
 use rand::Rng;
 use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
@@ -37,7 +38,23 @@ fn main() -> Result<(), Error> {
             .subcommand(SubCommand::with_name("init")
                 .about("Sets up a new test environment in the current or given directory"))
             .subcommand(SubCommand::with_name("run")
-                .about("Runs the tests"))
+                .about("Runs the tests")
+		.arg(Arg::with_name("log")
+		    .long("log")
+		    .short("l")
+		    .help("Turns on logging"))
+		.arg(Arg::with_name("log-file")
+		    .long("log-file")
+		    .value_name("LOG_FILE")
+		    .takes_value(true)
+		    .default_value("testing.log")
+		    .help("Sets the log file if logging is turned on"))
+		.arg(Arg::with_name("log-level")
+		    .long("log-level")
+		    .value_name("LEVEL")
+		    .takes_value(true)
+		    .default_value("info")
+		    .help("Sets the log level if logging is turned on")))
             .subcommand(SubCommand::with_name("add")
                 .about("Adds a new engine")
                 .arg(Arg::with_name("candidate")
@@ -164,7 +181,29 @@ fn main() -> Result<(), Error> {
 
             write_opening_file(&opening_file, &openings)?;
         },
-        ("run", Some(_matches)) => {
+        ("run", Some(matches)) => {
+	    let log_file = dir.join(matches.value_of_os("log-file").expect("INFALLIBLE"));
+	    let log_level = match matches.value_of("log-level") {
+		Some("off") => LevelFilter::Off,
+		Some("error") => LevelFilter::Error,
+		Some("warn") => LevelFilter::Warn,
+		Some("info") => LevelFilter::Info,
+		Some("debug") => LevelFilter::Debug,
+		Some("trace") => LevelFilter::Trace,
+		Some(level) => return Err(Error(format!("{}: invalid log level", level))),
+		None => unreachable!(),
+	    };
+	    let _logger = if matches.is_present("log") {
+		WriteLogger::init(
+		    log_level,
+		    Config::default(),
+		    File::create(&log_file).map_err(|err| {
+			Error(format!("{}: {}", log_file.display(), err))
+		    })?)
+	    } else {
+		WriteLogger::init(LevelFilter::Off, Config::default(), std::io::sink())
+	    };
+
             let candidates: HashMap<String, Vec<String>> = read_engine_file(&candidates_file)?;
             let opponents: HashMap<String, Vec<String>> = read_engine_file(&opponents_file)?;
             let openings = read_opening_file(&opening_file)?;
