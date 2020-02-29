@@ -305,14 +305,14 @@ impl FromStr for MoveSequence {
 
         for mv in re.split(s) {
             if mv.is_empty()
-                || mv.starts_with("*")
+                || mv.starts_with('*')
                 || mv.starts_with("1-0")
                 || mv.starts_with("0-1")
                 || mv.starts_with("1/2-1/2") {
                 continue;
             }
 
-            let pos = seq.final_position();
+            let pos = Arc::clone(seq.final_position());
             let mv = mv.parse::<MoveBuilder>()?.validate(&pos)?;
             seq.push(mv.into())?;
         }
@@ -686,6 +686,10 @@ impl Game {
         }
     }
 
+    /// Returns a PGN representation of the game, using the given tags.
+    ///
+    /// This method will add a "Result" tag, and, if needed, the "SetUp" and "FEN" tags to the
+    /// given tags.
     pub fn to_pgn(&self, tags: &HashMap<String, String>) -> String {
         let mut tags = tags.to_owned();
 

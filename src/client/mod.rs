@@ -9,9 +9,10 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::sync::Arc;
 use std::time::Instant;
-use crate::protocol::io;
+use std::fmt;
 use crate::chess;
 use chess::game::{Game, TimeControl, MoveSequence};
+use log::warn;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -20,12 +21,57 @@ use chess::game::{Game, TimeControl, MoveSequence};
 pub enum EngineResponse {
     /// The engine plays the given move.
     Move(chess::ArcMove),
-
     /// The engine resigns. No move is played.
     Resignation,
+}
 
-    /// The engine encountered a fatal error.
-    EngineError(String),
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Error in response to `EngineInterface::go`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineError{
+    /// The engine ran out of time to respond
+    OutOfTime,
+    /// Lost communication with the engine
+    IOError,
+    /// The engine tried to make an illegal move
+    IllegalMove,
+    /// The engine did not conform with the protocol
+    ProtocolError,
+    /// The engine did not accept a legal move
+    RejectedLegalMove,
+    /// The engine claims the game is over when it's not
+    FalseResultClaim,
+    /// Other error
+    Other,
+}
+
+impl fmt::Display for EngineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use EngineError::*;
+        match self {
+            OutOfTime => { "engine ran out of time" },
+            IOError => { "lost communication with engine" },
+            IllegalMove => { "engine tried to make an illegal move" },
+            ProtocolError => { "engine did not conform with the protocol" },
+            RejectedLegalMove => { "engine did not accept a legal move" },
+            FalseResultClaim => { "the engine claimed the game is over when it wasn't" },
+            Other => { "engine encountered an unknown error" },
+        }.fmt(f)
+    }
+}
+
+impl std::error::Error for EngineError {}
+
+impl From<std::sync::mpsc::RecvError> for EngineError {
+    fn from(_: std::sync::mpsc::RecvError) -> EngineError {
+        EngineError::IOError
+    }
+}
+
+impl From<chess::Error> for EngineError {
+    fn from(_: chess::Error) -> EngineError {
+        EngineError::IllegalMove
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -51,7 +97,7 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn go(&mut self, game: &Game) -> EngineResponse;
+    fn go(&mut self, game: &Game) -> Result<EngineResponse, EngineError>;
 
     /// The engine should make the last move in `game` and give a response within the available time
     /// for the player next player. The caller must guarantee the last, and only the last move has
@@ -59,10 +105,11 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn send_move_and_go(&mut self, game: &Game) -> EngineResponse;
+    fn send_move_and_go(&mut self, game: &Game) -> Result<EngineResponse, EngineError>;
 
     /// Sends the result of the game to the engine. The caller must guarantee that all moves have
-    /// already been seen by the engine and that no moves have been undone.
+    /// already been seen by the engine, that no moves have been undone, and that the game has a
+    /// final result.
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
@@ -104,9 +151,9 @@ impl GameSetup {
     }
 
     pub fn play_game(&self,
-        white: &mut dyn EngineInterface,
-        black: &mut dyn EngineInterface)
-    -> Game {
+        mut white: Box<dyn EngineInterface>,
+        mut black: Box<dyn EngineInterface>)
+    -> (Game, Result<(), EngineError>) {
         let mut game = Game::starting_at(self.opening.initial_position().as_ref().to_owned());
         game.set_time_control(self.tc);
         for mv in self.opening.iter() {
@@ -123,10 +170,15 @@ impl GameSetup {
             black.go(&game)
         };
         match response {
-            EngineResponse::Move(mv) => {
+            Ok(EngineResponse::Move(mv)) => {
                 game.make_move_timed(mv, Instant::now() - start);
             },
-            _ => { todo!() },
+            Ok(_) => { todo!() },
+            Err(error) => {
+                // TODO: set the game result
+                warn!("{}", error);
+                return (game, Err(error));
+            },
         }
 
         while game.result().is_none() {
@@ -137,16 +189,21 @@ impl GameSetup {
                 black.send_move_and_go(&game)
             };
             match response {
-                EngineResponse::Move(mv) => {
+                Ok(EngineResponse::Move(mv)) => {
                     game.make_move_timed(mv, Instant::now() - start);
                 },
-                _ => { todo!() },
+                Ok(_) => { todo!() },
+                Err(error) => {
+                    // TODO: set the game result
+                    warn!("{}", error);
+                    return (game, Err(error));
+                },
             }
         }
 
         white.result(&game);
         black.result(&game);
 
-        game
+        (game, Ok(()))
     }
 }

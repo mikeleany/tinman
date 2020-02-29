@@ -11,14 +11,13 @@ use std::path::{Path, PathBuf};
 use std::fs::{read_to_string, write, create_dir, File, OpenOptions};
 use std::io::Write;
 use std::collections::HashMap;
-use std::process::Command;
 use std::time::Duration;
 use clap::{App, Arg, SubCommand, AppSettings, crate_version};
 use simplelog::{WriteLogger, LevelFilter, Config};
 use rand::Rng;
 use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
-use tinman::client::{EngineInterface, GameSetup};
+use tinman::client::GameSetup;
 use tinman::chess::game::{MoveSequence, TimeControl};
 
 fn main() -> Result<(), Error> {
@@ -233,47 +232,31 @@ fn main() -> Result<(), Error> {
                     rand::thread_rng().gen_range(0, game_pairs.len()));
                 game_setup.opening(openings[opening].parse::<MoveSequence>().unwrap());
 
-                let candidate = &candidates[eng_name];
-                let opponent = &opponents[opp_name];
-                let mut eng = XboardClient::new(
-                    &candidate[0],
-                    &candidate[1..],
-                    &eng_name).unwrap();
-                let mut opp = XboardClient::new(
-                    &opponent[0],
-                    &opponent[1..],
-                    &opp_name).unwrap();
-
-                let mut pgn_tags = HashMap::new();
-                pgn_tags.insert("Event".to_owned(), "Automated testing".to_owned());
-                if let Ok(hostname) = hostname::get() {
-                    if let Ok(hostname) = hostname.into_string() {
-                        pgn_tags.insert("Site".to_owned(), hostname);
-                    }
-                }
-                pgn_tags.insert("Date".to_owned(), Local::today().format("%Y.%m.%d").to_string());
-                pgn_tags.insert("Round".to_owned(), "-".to_owned());
-                pgn_tags.insert("TestOpening".to_owned(), opening.to_owned());
-
-                pgn_tags.insert("White".to_owned(), eng_name.to_owned());
-                pgn_tags.insert("Black".to_owned(), opp_name.to_owned());
-                println!("{} vs {} ({:#})", eng_name, opp_name, opening);
-                let pgn_white = game_setup.play_game(&mut eng, &mut opp).to_pgn(&pgn_tags);
-                println!("{}", pgn_white);
-
-                pgn_tags.insert("White".to_owned(), opp_name.to_owned());
-                pgn_tags.insert("Black".to_owned(), eng_name.to_owned());
-                println!("{} vs {} ({:#})", opp_name, eng_name, opening);
-                let pgn_black = game_setup.play_game(&mut opp, &mut eng).to_pgn(&pgn_tags);
-                println!("{}", pgn_black);
-
-                // write games to engine's pgn file
+                // open engine's pgn file
                 let pgn_file = games_dir.join(eng_name.to_owned() + ".pgn");
                 let mut pgn_file = OpenOptions::new()
                     .append(true)
                     .create(true) // create if doesn't already exist
                     .open(pgn_file)?;
-                write!(pgn_file, "{}\n{}\n", pgn_white, pgn_black);
+
+                let eng_cmd = &candidates[eng_name];
+                let opp_cmd = &opponents[opp_name];
+
+                println!("{} vs {} ({:#})", eng_name, opp_name, opening);
+                let pgn = play_game(
+                    eng_name, eng_cmd,
+                    opp_name, opp_cmd,
+                    opening, &game_setup);
+                println!("{}", pgn);
+                writeln!(pgn_file, "{}", pgn);
+
+                println!("{} vs {} ({:#})", opp_name, eng_name, opening);
+                let pgn = play_game(
+                    opp_name, opp_cmd,
+                    eng_name, eng_cmd,
+                    opening, &game_setup);
+                println!("{}", pgn);
+                writeln!(pgn_file, "{}", pgn);
 
                 // TODO:
                 // if any input files have changed, re-read them
@@ -283,6 +266,37 @@ fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn play_game(
+    white_name: &str, white_cmd: &[String],
+    black_name: &str, black_cmd: &[String],
+    opening: &str, game_setup: &GameSetup)
+-> String {
+    let mut white = Box::new(XboardClient::new(
+        &white_cmd[0],
+        &white_cmd[1..],
+        white_name).unwrap());
+    let mut black = Box::new(XboardClient::new(
+        &black_cmd[0],
+        &black_cmd[1..],
+        black_name).unwrap());
+
+    let mut pgn_tags = HashMap::new();
+    pgn_tags.insert("Event".to_owned(), "Automated testing".to_owned());
+    if let Ok(hostname) = hostname::get() {
+        if let Ok(hostname) = hostname.into_string() {
+            pgn_tags.insert("Site".to_owned(), hostname);
+        }
+    }
+    pgn_tags.insert("Date".to_owned(), Local::today().format("%Y.%m.%d").to_string());
+    pgn_tags.insert("Round".to_owned(), "-".to_owned());
+    pgn_tags.insert("TestOpening".to_owned(), opening.to_owned());
+
+    pgn_tags.insert("White".to_owned(), white_name.to_owned());
+    pgn_tags.insert("Black".to_owned(), black_name.to_owned());
+
+    game_setup.play_game(white, black).0.to_pgn(&pgn_tags)
 }
 
 fn read_engine_file(path: &Path) -> Result<HashMap<String, Vec<String>>, Error> {

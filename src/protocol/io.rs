@@ -90,6 +90,7 @@ impl Client {
 /// Provides a means of communication with an engine.
 #[derive(Debug)]
 pub struct Engine {
+    id: String,
     recv: Receiver<String>,
     send: ChildStdin,
     proc: Child,
@@ -100,8 +101,6 @@ impl Engine {
     /// engine.
     pub fn launch<T, U>(cmd: T, args: &[U], id: &str)
     -> std::io::Result<Self> where T: AsRef<OsStr>, U: AsRef<OsStr> {
-        let id = id.to_string();
-
         let mut child = Command::new(cmd)
             .args(args)
             .stdin(Stdio::piped())
@@ -115,11 +114,13 @@ impl Engine {
 
         let (sender, receiver) = channel();
 
+        let owned_id = id.to_owned();
         thread::spawn(move || {
-            Self::thread(child_stdout, sender, id);
+            Self::thread(child_stdout, sender, owned_id);
         });
 
         Ok(Engine {
+            id: id.to_owned(),
             recv: receiver,
             send: child_stdin,
             proc: child,
@@ -140,7 +141,7 @@ impl Engine {
     /// Sends a message to the engine.
     pub fn send(&mut self, s: &str) -> std::io::Result<()> {
         writeln!(self.send, "{}", s)?;
-        info!("<engine>: {}", s);
+        info!("<to {}>: {}", self.id, s);
 
         Ok(())
     }
@@ -163,7 +164,7 @@ impl Engine {
                 },
                 Ok(_) => {
                     let line = line.trim().to_string();
-                    info!("<{}>: {}", id, line);
+                    info!("<from {}>: {}", id, line);
                     match sender.send(line) {
                         Ok(_) => { },
                         Err(err) => {

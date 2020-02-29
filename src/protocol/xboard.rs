@@ -21,7 +21,7 @@ use super::{Protocol, Action, SearchAction, io};
 use crate::chess;
 use crate::chess::game::{Game, TimeControl, GameResult};
 use crate::engine::Thinking;
-use crate::client::{EngineInterface, EngineResponse};
+use crate::client::{EngineInterface, EngineResponse, EngineError};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Current state of the engine.
@@ -645,16 +645,29 @@ impl XboardClient {
         //      wait for pong
     }
 
-    fn wait_for_response(&mut self, pos: &chess::Position) -> EngineResponse {
+    fn wait_for_move(&mut self, pos: &chess::Position) -> Result<EngineResponse, EngineError> {
         loop {
-            let response = self.engine.recv().unwrap().parse();
-            match response {
+            match self.engine.recv()?.parse() {
                 Ok(Response::Move(mv)) => {
-                    let mv = mv.parse::<chess::MoveBuilder>().unwrap().validate(pos).unwrap();
+                    let mv = mv.parse::<chess::MoveBuilder>()?.validate(pos)?;
                     self.move_count += 1;
-                    return EngineResponse::Move(mv.into());
+                    return Ok(EngineResponse::Move(mv.into()));
                 },
-                _ => { /*todo!()*/ }
+                Ok(Response::Resign) => {
+                    return Ok(EngineResponse::Resignation);
+                },
+                Ok(Response::OfferDraw) => {
+                },
+                Ok(Response::IllegalMove(_, _)) => {
+                    return Err(EngineError::RejectedLegalMove);
+                },
+                Ok(Response::GameResult(_, _)) => {
+                    return Err(EngineError::FalseResultClaim);
+                },
+                Ok(_) => { /*todo!()*/ }
+                Err(error) => {
+                    // ignore unknown responses
+                },
             }
         }
     }
@@ -701,7 +714,7 @@ impl EngineInterface for XboardClient {
         }
 
         self.move_count = 0;
-        if game.history().len() > 0 {
+        if !game.history().is_empty() {
             self.send_moves(game);
         } else {
             self.ping();
@@ -719,17 +732,17 @@ impl EngineInterface for XboardClient {
         self.ping();
     }
 
-    fn go(&mut self, game: &Game) -> EngineResponse {
+    fn go(&mut self, game: &Game) -> Result<EngineResponse, EngineError> {
         let mover = game.position().turn();
         self.send(&Command::Time(game.clock().remaining(mover)));
         self.send(&Command::OppTime(game.clock().remaining(!mover)));
         self.send(&Command::Go);
         self.force_mode = false;
 
-        self.wait_for_response(game.position())
+        self.wait_for_move(game.position())
     }
 
-    fn send_move_and_go(&mut self, game: &Game) -> EngineResponse {
+    fn send_move_and_go(&mut self, game: &Game) -> Result<EngineResponse, EngineError> {
         if self.force_mode {
             self.send_moves(game);
 
@@ -741,12 +754,12 @@ impl EngineInterface for XboardClient {
             self.send(&Command::OppTime(game.clock().remaining(!mover)));
             self.send_move(game.history().last().expect("INFALLIBLE"));
 
-            self.wait_for_response(game.position())
+            self.wait_for_move(game.position())
         }
     }
 
     fn result(&mut self, game: &Game) {
-        self.send(&game.result().unwrap().into());
+        self.send(&game.result().expect("game result").into());
         self.send(&Command::Force);
         self.force_mode = true;
         self.ping();
@@ -1030,7 +1043,7 @@ impl fmt::Display for Command {
             Force => "force".fmt(f),
             Go => "go".fmt(f),
             // TODO: allow move with usermove keyword
-            UserMove(mov) => format!("{}", mov).fmt(f),
+            UserMove(mov) => mov.to_string().fmt(f),
             SetBoard(fen) => format!("setboard {}", fen).fmt(f),
             Draw => "draw".fmt(f),
             GameResult{ result, reason: Some(reason) } =>
