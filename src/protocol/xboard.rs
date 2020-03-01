@@ -612,7 +612,7 @@ impl XboardClient {
                         }
                     }
                 },
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                Err(TryRecvError::Empty) => {
                     match stop_time {
                         Some(stop_time) if stop_time < Instant::now() => break,
                         _ => std::thread::yield_now(),
@@ -645,9 +645,10 @@ impl XboardClient {
         //      wait for pong
     }
 
-    fn wait_for_move(&mut self, pos: &chess::Position) -> Result<EngineResponse, EngineError> {
+    fn wait_for_move(&mut self, pos: &chess::Position, timeout: Duration)
+    -> Result<EngineResponse, EngineError> {
         loop {
-            match self.engine.recv()?.parse() {
+            match self.engine.recv_timeout(timeout)?.parse() {
                 Ok(Response::Move(mv)) => {
                     let mv = mv.parse::<chess::MoveBuilder>()?.validate(pos)?;
                     self.move_count += 1;
@@ -665,7 +666,7 @@ impl XboardClient {
                     return Err(EngineError::FalseResultClaim);
                 },
                 Ok(_) => { /*todo!()*/ }
-                Err(error) => {
+                Err(_) => {
                     // ignore unknown responses
                 },
             }
@@ -739,7 +740,7 @@ impl EngineInterface for XboardClient {
         self.send(&Command::Go);
         self.force_mode = false;
 
-        self.wait_for_move(game.position())
+        self.wait_for_move(game.position(), game.time_remaining(mover))
     }
 
     fn send_move_and_go(&mut self, game: &Game) -> Result<EngineResponse, EngineError> {
@@ -754,7 +755,7 @@ impl EngineInterface for XboardClient {
             self.send(&Command::OppTime(game.clock().remaining(!mover)));
             self.send_move(game.history().last().expect("INFALLIBLE"));
 
-            self.wait_for_move(game.position())
+            self.wait_for_move(game.position(), game.time_remaining(mover))
         }
     }
 

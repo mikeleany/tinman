@@ -10,8 +10,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 use std::fmt;
+use std::sync::mpsc;
 use crate::chess;
-use chess::game::{Game, TimeControl, MoveSequence};
+use chess::game::{Game, TimeControl, MoveSequence, GameResult, WinReason};
 use log::warn;
 
 
@@ -62,9 +63,19 @@ impl fmt::Display for EngineError {
 
 impl std::error::Error for EngineError {}
 
-impl From<std::sync::mpsc::RecvError> for EngineError {
-    fn from(_: std::sync::mpsc::RecvError) -> EngineError {
+impl From<mpsc::RecvError> for EngineError {
+    fn from(_: mpsc::RecvError) -> EngineError {
         EngineError::IOError
+    }
+}
+
+impl From<mpsc::RecvTimeoutError> for EngineError {
+    fn from(error: mpsc::RecvTimeoutError) -> EngineError {
+        use mpsc::RecvTimeoutError::*;
+        match error {
+            Disconnected => EngineError::IOError,
+            Timeout => EngineError::OutOfTime,
+        }
     }
 }
 
@@ -173,7 +184,11 @@ impl GameSetup {
             Ok(EngineResponse::Move(mv)) => {
                 game.make_move_timed(mv, Instant::now() - start);
             },
-            Ok(_) => { todo!() },
+            Ok(EngineResponse::Resignation) => {
+                game.set_result(GameResult::Win(
+                    !game.position().turn(),
+                    Some(WinReason::Resignation)));
+            },
             Err(error) => {
                 // TODO: set the game result
                 warn!("{}", error);
@@ -193,6 +208,11 @@ impl GameSetup {
                     game.make_move_timed(mv, Instant::now() - start);
                 },
                 Ok(_) => { todo!() },
+                Err(EngineError::OutOfTime) => {
+                    game.set_result(GameResult::Win(
+                        !game.position().turn(),
+                        Some(WinReason::Time)));
+                }
                 Err(error) => {
                     // TODO: set the game result
                     warn!("{}", error);

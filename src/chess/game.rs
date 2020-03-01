@@ -581,6 +581,11 @@ impl Game {
         self
     }
 
+    /// Sets the result of the game.
+    pub fn set_result(&mut self, result: GameResult) {
+        self.result = Some(result);
+    }
+
     /// Returns a reference counted pointer to the current position
     pub fn position(&self) -> &Arc<Position> {
         self.moves.final_position()

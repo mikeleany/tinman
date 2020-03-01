@@ -138,6 +138,10 @@ impl Engine {
         self.recv.try_recv()
     }
 
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<String, RecvTimeoutError> {
+        self.recv.recv_timeout(timeout)
+    }
+
     /// Sends a message to the engine.
     pub fn send(&mut self, s: &str) -> std::io::Result<()> {
         writeln!(self.send, "{}", s)?;
