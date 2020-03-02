@@ -63,6 +63,12 @@ impl fmt::Display for EngineError {
 
 impl std::error::Error for EngineError {}
 
+impl From<std::io::Error> for EngineError {
+    fn from(_: std::io::Error) -> EngineError {
+        EngineError::IOError
+    }
+}
+
 impl From<mpsc::RecvError> for EngineError {
     fn from(_: mpsc::RecvError) -> EngineError {
         EngineError::IOError
@@ -93,14 +99,14 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn new_game(&mut self, game: &Game);
+    fn new_game(&mut self, game: &Game) -> Result<(), EngineError>;
 
     /// The engine should update it's board to include any moves in `game` that it has not already
     /// seen. The caller must guarantee that no previous moves have been undone.
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn send_moves(&mut self, game: &Game);
+    fn send_moves(&mut self, game: &Game) -> Result<(), EngineError>;
 
     /// The engine should give a response within the available time for the player on move. The
     /// caller must guarantee that all moves in `game` have already been seen by the engine and that
@@ -124,7 +130,7 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn result(&mut self, game: &Game);
+    fn result(&mut self, game: &Game) -> Result<(), EngineError>;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -136,6 +142,7 @@ pub struct GameSetup<> {
 }
 
 impl GameSetup {
+    /// Creates a new `GameSetup` object with default starting position and time control.
     pub fn new() -> Self {
         GameSetup{
             tc: TimeControl::default(),
@@ -143,24 +150,28 @@ impl GameSetup {
         }
     }
 
+    /// Sets the time control for the game.
     pub fn time_control(&mut self, tc: TimeControl) -> &Self {
         self.tc = tc;
 
         self
     }
 
+    /// Sets the initial position for the game.
     pub fn initial_pos(&mut self, pos: chess::Position) -> &Self {
         self.opening = MoveSequence::starting_at(Arc::new(pos));
 
         self
     }
 
+    /// Sets the intial position and opening moves for the game.
     pub fn opening(&mut self, moves: MoveSequence) -> &Self {
         self.opening = moves;
 
         self
     }
 
+    /// Uses the given engines to play the game that has been set up.
     pub fn play_game(&self,
         mut white: Box<dyn EngineInterface>,
         mut black: Box<dyn EngineInterface>)
@@ -168,7 +179,7 @@ impl GameSetup {
         let mut game = Game::starting_at(self.opening.initial_position().as_ref().to_owned());
         game.set_time_control(self.tc);
         for mv in self.opening.iter() {
-            game.make_move(mv.to_owned());
+            game.make_move(mv.to_owned()).expect("INFALLIBLE");
         }
 
         white.new_game(&game);
@@ -182,7 +193,7 @@ impl GameSetup {
         };
         match response {
             Ok(EngineResponse::Move(mv)) => {
-                game.make_move_timed(mv, Instant::now() - start);
+                game.make_move_timed(mv, Instant::now() - start).expect("INFALLIBLE");
             },
             Ok(EngineResponse::Resignation) => {
                 game.set_result(GameResult::Win(
@@ -205,9 +216,13 @@ impl GameSetup {
             };
             match response {
                 Ok(EngineResponse::Move(mv)) => {
-                    game.make_move_timed(mv, Instant::now() - start);
+                    game.make_move_timed(mv, Instant::now() - start).expect("INFALLIBLE");
                 },
-                Ok(_) => { todo!() },
+                Ok(EngineResponse::Resignation) => {
+                    game.set_result(GameResult::Win(
+                        !game.position().turn(),
+                        Some(WinReason::Resignation)));
+                },
                 Err(EngineError::OutOfTime) => {
                     game.set_result(GameResult::Win(
                         !game.position().turn(),

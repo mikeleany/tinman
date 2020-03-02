@@ -248,7 +248,7 @@ fn main() -> Result<(), Error> {
                     opp_name, opp_cmd,
                     opening, &game_setup);
                 println!("{}", pgn);
-                writeln!(pgn_file, "{}", pgn);
+                writeln!(pgn_file, "{}", pgn)?;
 
                 println!("{} vs {} ({:#})", opp_name, eng_name, opening);
                 let pgn = play_game(
@@ -256,7 +256,7 @@ fn main() -> Result<(), Error> {
                     eng_name, eng_cmd,
                     opening, &game_setup);
                 println!("{}", pgn);
-                writeln!(pgn_file, "{}", pgn);
+                writeln!(pgn_file, "{}", pgn)?;
 
                 // TODO:
                 // if any input files have changed, re-read them
@@ -273,11 +273,11 @@ fn play_game(
     black_name: &str, black_cmd: &[String],
     opening: &str, game_setup: &GameSetup)
 -> String {
-    let mut white = Box::new(XboardClient::new(
+    let white = Box::new(XboardClient::new(
         &white_cmd[0],
         &white_cmd[1..],
         white_name).unwrap());
-    let mut black = Box::new(XboardClient::new(
+    let black = Box::new(XboardClient::new(
         &black_cmd[0],
         &black_cmd[1..],
         black_name).unwrap());

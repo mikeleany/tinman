@@ -138,6 +138,8 @@ impl Engine {
         self.recv.try_recv()
     }
 
+    /// Tries to retrieve a message from the engine. Blocks until a message is received or it times
+    /// out.
     pub fn recv_timeout(&self, timeout: Duration) -> Result<String, RecvTimeoutError> {
         self.recv.recv_timeout(timeout)
     }
@@ -187,6 +189,7 @@ impl Engine {
 }
 
 impl Drop for Engine {
+    /// Waits for the engine to exit, forcibly killing it if necessary.
     fn drop(&mut self) {
         let kill_time = Instant::now() + Duration::from_secs(1);
 
@@ -197,7 +200,7 @@ impl Drop for Engine {
             std::thread::yield_now()
         }
 
-        self.proc.kill();
+        let _ = self.proc.kill();
         while self.proc.wait().is_err() { }
     }
 }
