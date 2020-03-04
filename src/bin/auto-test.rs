@@ -8,17 +8,18 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::path::{Path, PathBuf};
-use std::fs::{read_to_string, write, create_dir, File, OpenOptions};
+use std::fs::{read_to_string, write, create_dir, read_dir, File, OpenOptions};
 use std::io::Write;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use clap::{App, Arg, SubCommand, AppSettings, crate_version};
 use simplelog::{WriteLogger, LevelFilter, Config};
-use rand::Rng;
+use rand::seq::SliceRandom;
 use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
 use tinman::client::GameSetup;
 use tinman::chess::game::{MoveSequence, TimeControl};
+use tinman::pgn::read_pgn_games;
 
 fn main() -> Result<(), Error> {
     let matches =
@@ -207,29 +208,62 @@ fn main() -> Result<(), Error> {
             let opponents: HashMap<String, Vec<String>> = read_engine_file(&opponents_file)?;
             let openings = read_opening_file(&opening_file)?;
 
-            // create list of games to be played
-            let mut game_pairs = Vec::new();
+            // create set of games to be played
+            let mut white_games = HashSet::new();
+            let mut black_games = HashSet::new();
             for eng in candidates.keys() {
                 for opp in opponents.keys() {
                     for opening in openings.keys() {
-                        game_pairs.push((eng, opp, opening));
+                        white_games.insert((eng.to_owned(), opp.to_owned(), opening.to_owned()));
+                        black_games.insert((eng.to_owned(), opp.to_owned(), opening.to_owned()));
                     }
                 }
             }
 
-            // TODO:
-            // determine games played from output pgn files and remove them from the list
-            // if any pairs of games are incomplete, play the remaining games
+            // remove games that have already been played
+            for entry in read_dir(&games_dir)? {
+                let pgn_file = entry?.path();
+                println!("reading {}\n", pgn_file.display());
+                for game in read_pgn_games(File::open(pgn_file)?) {
+                    let mut white = String::new();
+                    let mut black = String::new();
+                    let mut opening = String::new();
+
+                    for (tag, value) in game?.tags().unwrap() {
+                        match tag.as_str() {
+                            "White" => white = value,
+                            "Black" => black = value,
+                            "TestOpening" => opening = value,
+                            _ => {},
+                        }
+                    }
+
+                    let entry = (white.clone(), black.clone(), opening.clone());
+                    white_games.remove(&entry);
+                    let entry = (black.clone(), white.clone(), opening.clone());
+                    black_games.remove(&entry);
+                }
+            }
+
+            let mut single_games: Vec<_> = white_games
+                .symmetric_difference(&black_games)
+                .cloned()
+                .collect();
+            single_games.shuffle(&mut rand::thread_rng());
+            let mut game_pairs: Vec<_> = white_games
+                .intersection(&black_games)
+                .cloned()
+                .collect();
+            game_pairs.shuffle(&mut rand::thread_rng());
+            let all_games = [single_games, game_pairs].concat();
 
             let mut game_setup = GameSetup::new();
             game_setup.time_control(TimeControl::Incremental{
                     base: Duration::from_secs(60),
                     inc: Duration::from_secs(1), });
 
-            while !game_pairs.is_empty() {
-                // randomly select a pair of games to play
-                let (eng_name, opp_name, opening) = game_pairs.swap_remove(
-                    rand::thread_rng().gen_range(0, game_pairs.len()));
+            for game in all_games {
+                let (eng_name, opp_name, opening) = &game;
                 game_setup.opening(openings[opening].parse::<MoveSequence>().unwrap());
 
                 // open engine's pgn file
@@ -243,20 +277,28 @@ fn main() -> Result<(), Error> {
                 let opp_cmd = &opponents[opp_name];
 
                 println!("{} vs {} ({:#})", eng_name, opp_name, opening);
-                let pgn = play_game(
-                    eng_name, eng_cmd,
-                    opp_name, opp_cmd,
-                    opening, &game_setup);
-                println!("{}", pgn);
-                writeln!(pgn_file, "{}", pgn)?;
+                if white_games.contains(&game) {
+                    let pgn = play_game(
+                        eng_name, eng_cmd,
+                        opp_name, opp_cmd,
+                        opening, &game_setup);
+                    println!("{}", pgn);
+                    writeln!(pgn_file, "{}", pgn)?;
+                } else {
+                    println!("\t*** skipping, already been played ***\n");
+                }
 
                 println!("{} vs {} ({:#})", opp_name, eng_name, opening);
-                let pgn = play_game(
-                    opp_name, opp_cmd,
-                    eng_name, eng_cmd,
-                    opening, &game_setup);
-                println!("{}", pgn);
-                writeln!(pgn_file, "{}", pgn)?;
+                if black_games.contains(&game) {
+                    let pgn = play_game(
+                        opp_name, opp_cmd,
+                        eng_name, eng_cmd,
+                        opening, &game_setup);
+                    println!("{}", pgn);
+                    writeln!(pgn_file, "{}", pgn)?;
+                } else {
+                    println!("\t*** skipping, already been played ***\n");
+                }
 
                 // TODO:
                 // if any input files have changed, re-read them
