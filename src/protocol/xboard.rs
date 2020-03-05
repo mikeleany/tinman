@@ -492,6 +492,9 @@ pub struct XboardClient {
     move_count: usize,
     force_mode: bool,
     ponder: bool,
+    san: bool,
+    usermove: bool,
+    ping: usize,
 }
 
 impl XboardClient {
@@ -503,6 +506,9 @@ impl XboardClient {
             move_count: 0,
             force_mode: false,
             ponder: true,
+            san: false,
+            usermove: false,
+            ping: 0,
         }.init()
     }
 
@@ -547,15 +553,59 @@ impl XboardClient {
                                     },
                                 },
 
-                                "sigint" | "sigterm" => {
+                                "san" => match feature.value {
+                                    FeatureValue::Int(0) => {
+                                        self.san = false;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    FeatureValue::Int(1) => {
+                                        self.san = true;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    _ => {
+                                        self.send(&Command::Rejected(feature.name))?;
+                                    },
+                                },
+
+                                "usermove" => match feature.value {
+                                    FeatureValue::Int(0) => {
+                                        self.usermove = false;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    FeatureValue::Int(1) => {
+                                        self.usermove = true;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    _ => {
+                                        self.send(&Command::Rejected(feature.name))?;
+                                    },
+                                },
+
+                                "ping" => match feature.value {
+                                    FeatureValue::Int(0) => {
+                                        self.ping = 0;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    FeatureValue::Int(1) => {
+                                        self.ping = 1;
+                                        self.send(&Command::Accepted(feature.name))?;
+                                    },
+                                    _ => {
+                                        self.send(&Command::Rejected(feature.name))?;
+                                    },
+                                },
+
+                                "sigint" => {
                                     if feature.value == FeatureValue::Int(0) {
                                         self.send(&Command::Accepted(feature.name))?;
                                     } else {
-                                        // sigint and sigterm are not supported
+                                        // sigint is not supported
                                         self.send(&Command::Rejected(feature.name))?;
                                     }
                                 },
-                                "times" => {
+
+                                // this should only be "times", but some engines use "time" instead
+                                "times" | "time" => {
                                     if feature.value == FeatureValue::Int(1) {
                                         self.send(&Command::Accepted(feature.name))?;
                                     } else {
@@ -565,16 +615,8 @@ impl XboardClient {
                                 },
 
                                 // TODO: make use of these features
-                                "ping" | "setboard" | "memory" | "smp" => {
+                                "setboard" | "memory" | "smp" => {
                                     if let FeatureValue::Int(_) = feature.value {
-                                        self.send(&Command::Accepted(feature.name))?;
-                                    } else {
-                                        self.send(&Command::Rejected(feature.name))?;
-                                    }
-                                },
-                                // TODO: add support for enabling these features
-                                "usermove" | "san" => {
-                                    if feature.value == FeatureValue::Int(1) {
                                         self.send(&Command::Accepted(feature.name))?;
                                     } else {
                                         self.send(&Command::Rejected(feature.name))?;
@@ -592,15 +634,16 @@ impl XboardClient {
                                 // these features are accepted, but (currently) ignored
                                 "debug" | "draw" | "pause" | "nps" | "analyze"
                                 | "exclude" | "setscore" | "playother" | "ics"
-                                | "name" | "colors" => {
+                                | "name" | "colors" | "sigterm" => {
                                     if let FeatureValue::Int(_) = feature.value {
                                         self.send(&Command::Accepted(feature.name))?;
                                     } else {
                                         self.send(&Command::Rejected(feature.name))?;
                                     }
                                 },
+
                                 // these features are accepted, but (currently) ignored
-                                "myname" | "egt" | "option" => {
+                                "myname" | "egt" | "option" | "variants" => {
                                     if let FeatureValue::String(_) = feature.value {
                                         self.send(&Command::Accepted(feature.name))?;
                                     } else {
@@ -638,18 +681,52 @@ impl XboardClient {
 
     /// Send a move to the engine.
     fn send_move(&mut self, mv: &chess::ArcMove) -> std::io::Result<()> {
-        // TODO: format command differently, based on usermove feature
-        // TODO: format move differently based on san feature
         self.move_count += 1;
-        self.engine.send(&Command::UserMove(format!("{:#}", mv)).to_string())
+
+        let move_string = if self.san {
+            mv.to_string()
+        } else {
+            format!("{:#}", mv)
+        };
+
+        let cmd = Command::UserMove(move_string);
+
+        if self.usermove {
+            self.engine.send(&format!("{:#}", cmd))
+        } else {
+            self.engine.send(&cmd.to_string())
+        }
     }
 
     /// Pings the engine and waits for a response.
-    fn ping(&mut self) {
-        // TODO:
-        // if ping enabled
-        //      send ping
-        //      wait for pong
+    fn ping(&mut self) -> Result<(), EngineError> {
+        if self.ping > 0 {
+            self.send(&Command::Ping(self.ping));
+            loop {
+                match self.engine.recv()?.parse() {
+                    Ok(Response::Pong(n)) => {
+                        if n == self.ping {
+                            break;
+                        } else {
+                            return Err(EngineError::ProtocolError);
+                        }
+                    },
+                    Ok(Response::IllegalMove(_, _)) => {
+                        return Err(EngineError::RejectedLegalMove);
+                    },
+                    Ok(Response::GameResult(_, _)) => {
+                        return Err(EngineError::FalseResultClaim);
+                    },
+                    Ok(_) => { /*todo!()*/ }
+                    Err(_) => {
+                        // ignore unknown responses
+                    },
+                }
+            }
+            self.ping += 1;
+        }
+
+        Ok(())
     }
 
     /// Waits for a move (or resign) response from the engine.
@@ -692,6 +769,7 @@ impl Drop for XboardClient {
 
 impl EngineInterface for XboardClient {
     fn new_game(&mut self, game: &Game) -> Result<(), EngineError> {
+        // TODO: include all this in init() and only allow one game per engine invocation
         self.send(&Command::New)?;
         self.send(&Command::Post)?;
         if self.ponder {
@@ -727,7 +805,7 @@ impl EngineInterface for XboardClient {
         if !game.history().is_empty() {
             self.send_moves(game)?;
         } else {
-            self.ping();
+            self.ping()?;
         }
 
         Ok(())
@@ -735,14 +813,18 @@ impl EngineInterface for XboardClient {
 
     fn send_moves(&mut self, game: &Game) -> Result<(), EngineError> {
         assert!(self.move_count <= game.history().len());
-        self.force_mode = true;
-        self.send(&Command::Force)?;
+
+        if !self.force_mode {
+            self.force_mode = true;
+            self.send(&Command::Force)?;
+        }
+
         for mv in game.history().iter().skip(self.move_count) {
             self.send_move(mv)?;
         }
         self.move_count = game.history().len();
-        self.ping();
 
+        self.ping()?;
         Ok(())
     }
 
@@ -776,7 +858,7 @@ impl EngineInterface for XboardClient {
         self.send(&game.result().expect("game result").into())?;
         self.send(&Command::Force)?;
         self.force_mode = true;
-        self.ping();
+        self.ping()?;
 
         Ok(())
     }
@@ -1058,8 +1140,13 @@ impl fmt::Display for Command {
             New => "new".fmt(f),
             Force => "force".fmt(f),
             Go => "go".fmt(f),
-            // TODO: allow move with usermove keyword
-            UserMove(mov) => mov.to_string().fmt(f),
+            UserMove(mv) => {
+                if f.alternate() {
+                    format!("usermove {}", mv).fmt(f)
+                } else {
+                    mv.fmt(f)
+                }
+            },
             SetBoard(fen) => format!("setboard {}", fen).fmt(f),
             Draw => "draw".fmt(f),
             GameResult{ result, reason: Some(reason) } =>
