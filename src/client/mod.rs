@@ -182,8 +182,12 @@ impl GameSetup {
             game.make_move(mv.to_owned()).expect("INFALLIBLE");
         }
 
-        white.new_game(&game);
-        black.new_game(&game);
+        if let Err(error) = white.new_game(&game) {
+            return (game, Err(error));
+        }
+        if let Err(error) = black.new_game(&game) {
+            return (game, Err(error));
+        }
 
         let start = Instant::now();
         let response = if game.position().turn() == chess::Color::White {
@@ -236,8 +240,8 @@ impl GameSetup {
             }
         }
 
-        white.result(&game);
-        black.result(&game);
+        let _ = white.result(&game);
+        let _ = black.result(&game);
 
         (game, Ok(()))
     }

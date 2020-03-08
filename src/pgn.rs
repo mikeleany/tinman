@@ -7,6 +7,7 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+use std::fmt;
 use std::io;
 use std::io::{Read, BufRead, BufReader};
 use std::collections::HashMap;
@@ -110,3 +111,11 @@ impl PgnParser {
 
 #[derive(Debug)]
 pub struct PgnParseError;
+
+impl fmt::Display for PgnParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        "PGN parse error".fmt(f)
+    }
+}
+
+impl std::error::Error for PgnParseError { }

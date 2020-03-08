@@ -701,7 +701,7 @@ impl XboardClient {
     /// Pings the engine and waits for a response.
     fn ping(&mut self) -> Result<(), EngineError> {
         if self.ping > 0 {
-            self.send(&Command::Ping(self.ping));
+            self.send(&Command::Ping(self.ping))?;
             loop {
                 match self.engine.recv()?.parse() {
                     Ok(Response::Pong(n)) => {
