@@ -7,6 +7,10 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+#![warn(missing_docs, missing_debug_implementations, unused_extern_crates)]
+#![warn(clippy::unimplemented, clippy::todo)]
+#![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
+
 use std::fs::File;
 use std::path::PathBuf;
 use clap::{App, Arg, SubCommand, crate_version};
@@ -18,7 +22,7 @@ use tinman::protocol::xboard::Xboard;
 fn main() -> Result<(), Error> {
     let _app_dir = dirs::home_dir()
         .map(|home| { home.join(".tinman") })
-        .unwrap_or(PathBuf::from("."));
+        .unwrap_or_else(|| PathBuf::from("."));
 
     let matches =
         App::new("Tinman")

@@ -14,10 +14,16 @@ use std::collections::HashMap;
 use crate::chess;
 use chess::game::{Game, MoveSequence, GameResult};
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Returns an iterator over PGN games that are read from `reader`.
 pub fn read_pgn_games<R: Read>(reader: R) -> ReadPgnGames<R> {
     ReadPgnGames{ reader: BufReader::new(reader), buffer: String::new() }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// An iterator over PGN games that are read from a `Reader`. The iterator can return an error, so
+/// the item is a `std::io::Result`. 
+#[derive(Debug)]
 pub struct ReadPgnGames<R: Read> {
     reader: BufReader<R>,
     buffer: String,
@@ -61,16 +67,21 @@ impl<R: Read> Iterator for ReadPgnGames<R> {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// An individual PGN game which needs to be parsed.
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PgnParser {
     tags: Vec<String>,
     move_text: String,
 }
 
 impl PgnParser {
+    /// Returns the list of tags as raw (unparsed) strings.
     pub fn tag_text(&self) -> &Vec<String> {
         &self.tags
     }
 
+    /// Parses and returns the tags as a `HashMap` of name/value pairs.
     pub fn tags(&self) -> Result<HashMap<String, String>, PgnParseError> {
         let mut tags = HashMap::new();
         for tag in &self.tags {
@@ -92,24 +103,30 @@ impl PgnParser {
         Ok(tags)
     }
 
+    /// Returns the raw (unparsed) move text.
     pub fn move_text(&self) -> &str {
         &self.move_text
     }
 
+    /// Parses and returns the moves of the game.
     pub fn parse_moves(&self) -> chess::Result<MoveSequence> {
         self.move_text.parse()
     }
 
+    /// Parses and returns the result (if any) of the game.
     pub fn parse_result(&self) -> Result<Option<GameResult>, PgnParseError> {
         todo!()
     }
 
+    /// Parses the PGN game and returns it in a `Game` structure.
     pub fn parse_game(&self) -> Result<Game, PgnParseError> {
         todo!()
     }
 }
 
-#[derive(Debug)]
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// An error that can occur while parsing PGN games.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct PgnParseError;
 
 impl fmt::Display for PgnParseError {
