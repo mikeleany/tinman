@@ -205,7 +205,9 @@ impl GameSetup {
                     Some(WinReason::Resignation)));
             },
             Err(error) => {
-                // TODO: set the game result
+                game.set_result(GameResult::Win(
+                    !game.position().turn(),
+                    Some(WinReason::Forfeiture)));
                 warn!("{}", error);
                 return (game, Err(error));
             },
@@ -233,7 +235,9 @@ impl GameSetup {
                         Some(WinReason::Time)));
                 }
                 Err(error) => {
-                    // TODO: set the game result
+                    game.set_result(GameResult::Win(
+                        !game.position().turn(),
+                        Some(WinReason::Forfeiture)));
                     warn!("{}", error);
                     return (game, Err(error));
                 },

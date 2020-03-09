@@ -570,7 +570,6 @@ impl<'a> MoveBuilder {
                 Bishop => { attacks = bishop_attacks(dest, pos.occupied()); },
                 Knight => { attacks = knight_attacks(dest); },
                 Pawn => {
-                    // TODO: handle two-square advancement
                     let forward = if pos.turn() == White { 1 } else { -1 };
                     let rank_mask = Bitboard::from(dest.rank()).shift_y(-forward);
                     let rank_mask2 = (rank_mask & !pos.occupied()).shift_y(-forward);

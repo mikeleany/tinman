@@ -511,6 +511,8 @@ pub enum WinReason {
     Resignation,
     /// One player's time ran out.
     Time,
+    /// The opponent forfeits.
+    Forfeiture
 }
 
 impl fmt::Display for WinReason {
@@ -519,6 +521,7 @@ impl fmt::Display for WinReason {
             WinReason::Checkmate => "checkmate".fmt(f),
             WinReason::Resignation => "by resignation".fmt(f),
             WinReason::Time => "time expired".fmt(f),
+            WinReason::Forfeiture => "by forfeiture".fmt(f),
         }
     }
 }
