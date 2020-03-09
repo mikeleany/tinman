@@ -570,7 +570,6 @@ impl<'a> MoveBuilder {
                 Bishop => { attacks = bishop_attacks(dest, pos.occupied()); },
                 Knight => { attacks = knight_attacks(dest); },
                 Pawn => {
-                    // TODO: handle two-square advancement
                     let forward = if pos.turn() == White { 1 } else { -1 };
                     let rank_mask = Bitboard::from(dest.rank()).shift_y(-forward);
                     let rank_mask2 = (rank_mask & !pos.occupied()).shift_y(-forward);
@@ -750,6 +749,16 @@ impl FromStr for MoveBuilder {
             // empty string
             return Err(Error::ParseError);
         };
+
+        // remove check or checkmate characters
+        if c == "+" || c == "#" {
+            next = chars.next_back();
+            c = if let Some(c) = next {
+                c.to_string()
+            } else {
+                return Err(Error::ParseError);
+            };
+        }
 
         // promotion piece
         let prom_pc = match c.as_str() {

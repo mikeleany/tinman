@@ -14,6 +14,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use std::time::Duration;
 use std::convert::TryInto;
+use std::collections::HashMap;
 use super::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -289,8 +290,34 @@ impl fmt::Display for MoveSequence {
                 s += &format!("{} ", mv);
             }
         }
+        s.pop(); // remove space from end of string
 
         s.fmt(f)
+    }
+}
+
+impl FromStr for MoveSequence {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<MoveSequence> {
+        let re = regex::Regex::new(r"\s+|\s*\d+\s*\.\s*").expect("regex error");
+        let mut seq = MoveSequence::new();
+
+        for mv in re.split(s) {
+            if mv.is_empty()
+                || mv.starts_with('*')
+                || mv.starts_with("1-0")
+                || mv.starts_with("0-1")
+                || mv.starts_with("1/2-1/2") {
+                continue;
+            }
+
+            let pos = Arc::clone(seq.final_position());
+            let mv = mv.parse::<MoveBuilder>()?.validate(&pos)?;
+            seq.push(mv.into())?;
+        }
+
+        Ok(seq)
     }
 }
 
@@ -484,6 +511,8 @@ pub enum WinReason {
     Resignation,
     /// One player's time ran out.
     Time,
+    /// The opponent forfeits.
+    Forfeiture
 }
 
 impl fmt::Display for WinReason {
@@ -492,6 +521,7 @@ impl fmt::Display for WinReason {
             WinReason::Checkmate => "checkmate".fmt(f),
             WinReason::Resignation => "by resignation".fmt(f),
             WinReason::Time => "time expired".fmt(f),
+            WinReason::Forfeiture => "by forfeiture".fmt(f),
         }
     }
 }
@@ -552,6 +582,11 @@ impl Game {
         self.clock = Clock::new(tc);
 
         self
+    }
+
+    /// Sets the result of the game.
+    pub fn set_result(&mut self, result: GameResult) {
+        self.result = Some(result);
     }
 
     /// Returns a reference counted pointer to the current position
@@ -633,6 +668,9 @@ impl Game {
         if self.position().fifty_moves() {
             self.result = Some(GameResult::Draw(Some(DrawReason::FiftyMoves)));
             return;
+        } else if self.position().insufficient_material() {
+            self.result = Some(GameResult::Draw(Some(DrawReason::Material)));
+            return;
         } else if self.moves.three_fold_repetition() {
             self.result = Some(GameResult::Draw(Some(DrawReason::Repetition)));
             return;
@@ -654,5 +692,69 @@ impl Game {
         } else {
             self.result = Some(GameResult::Draw(Some(DrawReason::Stalemate)));
         }
+    }
+
+    /// Returns a PGN representation of the game, using the given tags.
+    ///
+    /// This method will add a "Result" tag, and, if needed, the "SetUp" and "FEN" tags to the
+    /// given tags.
+    pub fn to_pgn(&self, tags: &HashMap<String, String>) -> String {
+        let mut tags = tags.to_owned();
+
+        if self.moves.initial_position().zobrist_key() != Position::default().zobrist_key() {
+            tags.insert("SetUp".to_owned(), "1".to_owned());
+            tags.insert("FEN".to_owned(), self.moves.initial_position().to_string());
+        }
+
+        let result = match self.result {
+            Some(GameResult::Win(Color::White, _)) => "1-0",
+            Some(GameResult::Win(Color::Black, _)) => "0-1",
+            Some(GameResult::Draw(_)) => "1/2-1/2",
+            _ => "*",
+        };
+        tags.insert("Result".to_owned(), result.to_owned());
+
+        let mut tag_list = String::new();
+        for &name in &["Event", "Site", "Date", "Round", "White", "Black", "Result"] {
+            let value = match (name, tags.remove(name)) {
+                (_, Some(value)) => value,
+                ("Date", None) => "????.??.??".to_owned(),
+                (_, None) => "?".to_owned(),
+            };
+
+            tag_list += &format!("[{} \"{}\"]\n", name, value);
+        }
+
+        let mut names: Vec<_> = tags.keys().collect();
+        names.sort_unstable();
+
+        for name in names {
+            tag_list += &format!("[{} \"{}\"]\n", name, tags[name]);
+        }
+
+        let result = if let Some(result) = self.result {
+            result.to_string()
+        } else {
+            "*".to_owned()
+        };
+
+        let mut move_text = String::new();
+        let mut width = 0;
+        for word in format!("{:+} {}", self.moves, result).split(' ') {
+            // split into lines of no more than than 80 BYTES each
+            if width + word.len() < 80 && width > 0 {
+                move_text += " ";
+                width += 1;
+            } else if width > 0{
+                move_text += "\n";
+                width = 0;
+            }
+            move_text += word;
+            width += word.len();
+        }
+
+        let pgn = format!("{}\n{}\n", tag_list, move_text);
+
+        pgn
     }
 }

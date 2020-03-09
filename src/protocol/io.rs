@@ -8,10 +8,15 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::io::stdin;
+use std::io::{Write, BufRead, BufReader};
 use std::thread;
 use std::sync::mpsc::*;
+use std::process::{Command, Stdio, Child, ChildStdout, ChildStdin};
+use std::time::{Duration, Instant};
+use std::ffi::OsStr;
 use log::{info, error};
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Provides a pollable interface with the client using stdin and stdout. All input and output is
 /// logged using the log crate (assuming a logger is set up).
 #[derive(Debug)]
@@ -57,22 +62,145 @@ impl Client {
             let mut line = String::new();
 
             match stdin.read_line(&mut line) {
-                Ok(_) => { },
+                Ok(0) => {
+                    info!("client at EOF");
+                    return;
+                },
+                Ok(_) => {
+                    let line = line.trim().to_string();
+                    info!("<client>: {}", line);
+                    match sender.send(line) {
+                        Ok(_) => { },
+                        Err(err) => {
+                            error!("internal error: {}", err);
+                            panic!("internal error: {}", err);
+                        },
+                    }
+                },
                 Err(err) => {
                     error!("io error: {}", err);
                     panic!("io error: {}", err);
                 },
             }
+        }
+    }
+}
 
-            let line = line.trim().to_string();
-            info!("<client>: {}", line);
-            match sender.send(line) {
-                Ok(_) => { },
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Provides a means of communication with an engine.
+#[derive(Debug)]
+pub struct Engine {
+    id: String,
+    recv: Receiver<String>,
+    send: ChildStdin,
+    proc: Child,
+}
+
+impl Engine {
+    /// Launches an engine using the given command. Returns an interface to communicate with the
+    /// engine.
+    pub fn launch<T, U>(cmd: T, args: &[U], id: &str)
+    -> std::io::Result<Self> where T: AsRef<OsStr>, U: AsRef<OsStr> {
+        let mut child = Command::new(cmd)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let child_stdout = child.stdout.expect("INFALLIBLE");
+        child.stdout = None;
+        let child_stdin = child.stdin.expect("INFALLIBLE");
+        child.stdin = None;
+
+        let (sender, receiver) = channel();
+
+        let owned_id = id.to_owned();
+        thread::spawn(move || {
+            Self::thread(child_stdout, sender, owned_id);
+        });
+
+        Ok(Engine {
+            id: id.to_owned(),
+            recv: receiver,
+            send: child_stdin,
+            proc: child,
+        })
+    }
+
+    /// Retrieves a message from the engine. Blocks until a message is received.
+    pub fn recv(&self) -> Result<String, RecvError> {
+        self.recv.recv()
+    }
+
+    /// Tries to retrieve a message from the engine, but does not block if a message is not
+    /// available.
+    pub fn try_recv(&self) -> Result<String, TryRecvError> {
+        self.recv.try_recv()
+    }
+
+    /// Tries to retrieve a message from the engine. Blocks until a message is received or it times
+    /// out.
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<String, RecvTimeoutError> {
+        self.recv.recv_timeout(timeout)
+    }
+
+    /// Sends a message to the engine.
+    pub fn send(&mut self, s: &str) -> std::io::Result<()> {
+        writeln!(self.send, "{}", s)?;
+        info!("<to {}>: {}", self.id, s);
+
+        Ok(())
+    }
+
+    /// A function run in a separate thread to get input from the engine.
+    ///
+    /// # Panics
+    ///
+    /// Panics if reading fails for any reason.
+    fn thread(engine: ChildStdout, sender: Sender<String>, id: String) {
+        let mut engine = BufReader::new(engine);
+
+        loop {
+            let mut line = String::new();
+
+            match engine.read_line(&mut line) {
+                Ok(0) => {
+                    info!("{} at EOF", id);
+                    return;
+                },
+                Ok(_) => {
+                    let line = line.trim().to_string();
+                    info!("<from {}>: {}", id, line);
+                    match sender.send(line) {
+                        Ok(_) => { },
+                        Err(err) => {
+                            error!("internal error: {}", err);
+                            panic!("internal error: {}", err);
+                        },
+                    }
+                },
                 Err(err) => {
-                    error!("internal error: {}", err);
-                    panic!("internal error: {}", err);
+                    error!("io error: {}", err);
+                    panic!("io error: {}", err);
                 },
             }
         }
+    }
+}
+
+impl Drop for Engine {
+    /// Waits for the engine to exit, forcibly killing it if necessary.
+    fn drop(&mut self) {
+        let kill_time = Instant::now() + Duration::from_secs(1);
+
+        while Instant::now() < kill_time {
+            if let Ok(Some(_)) = self.proc.try_wait() {
+                return;
+            }
+            std::thread::yield_now()
+        }
+
+        let _ = self.proc.kill();
+        while self.proc.wait().is_err() { }
     }
 }
