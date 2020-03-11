@@ -380,7 +380,7 @@ impl<T> Engine<T> where T: Protocol {
                     self.search(ply+1, depth-1, -beta, -alpha)?
                 } else {
                     let (val, child_pv) = self.search(ply+1, depth-1, -alpha-1, -alpha)?;
-                    if -val > alpha { // TODO: maybe && val < beta {
+                    if -val > alpha && -val < beta {
                         // possible new pv
                         self.search(ply+1, depth-1, -beta, -alpha)?
                     } else {
