@@ -268,9 +268,18 @@ impl<T> Engine<T> where T: Protocol {
             // search each move
             for (n, seq) in move_list.iter().enumerate() {
                 self.history.append(&mut seq.clone()).expect("INFALLIBLE");
-                if let Some((val, child_pv))
-                    = self.search(1, depth-1, -Score::infinity(), -best_val) {
+                let search_result = if best_val == -Score::infinity() {
+                    self.search(1, depth-1, -Score::infinity(), -best_val)
+                } else {
+                    let search_result = self.search(1, depth-1, -best_val-1, -best_val);
+                    if search_result.as_ref().map_or(false, |&(val, _)| -val > best_val) {
+                        self.search(1, depth-1, -Score::infinity(), -best_val)
+                    } else {
+                        search_result
+                    }
+                };
 
+                if let Some((val, child_pv)) = search_result {
                     self.history.pop();
                     let val = -val;
 
