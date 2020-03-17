@@ -268,9 +268,18 @@ impl<T> Engine<T> where T: Protocol {
             // search each move
             for (n, seq) in move_list.iter().enumerate() {
                 self.history.append(&mut seq.clone()).expect("INFALLIBLE");
-                if let Some((val, mut new_pv))
-                    = self.search(1, depth-1, -Score::infinity(), -best_val) {
+                let search_result = if best_val == -Score::infinity() {
+                    self.search(1, depth-1, -Score::infinity(), -best_val)
+                } else {
+                    let search_result = self.search(1, depth-1, -best_val-1, -best_val);
+                    if search_result.as_ref().map_or(false, |&(val, _)| -val > best_val) {
+                        self.search(1, depth-1, -Score::infinity(), -best_val)
+                    } else {
+                        search_result
+                    }
+                };
 
+                if let Some((val, child_pv)) = search_result {
                     self.history.pop();
                     let val = -val;
 
@@ -280,7 +289,9 @@ impl<T> Engine<T> where T: Protocol {
                         thinking.score = best_val;
                         thinking.depth = depth;
                         thinking.pv = seq.clone();
-                        thinking.pv.append(&mut new_pv).expect("INFALLIBLE");
+                        if let Some(mut child_pv) = child_pv {
+                            thinking.pv.append(&mut child_pv).expect("INFALLIBLE");
+                        }
                     }
                 } else if self.abort {
                     return None;
@@ -320,9 +331,9 @@ impl<T> Engine<T> where T: Protocol {
     fn search(&mut self,
         ply: usize, mut depth: u8,
         mut alpha: Score, beta: Score)
-    -> Option<(Score, MoveSequence)> {
+    -> Option<(Score, Option<MoveSequence>)> {
         let pos = Arc::clone(self.history.final_position());
-        let mut pv = MoveSequence::starting_at(Arc::clone(&pos));
+        let mut pv = None;
 
         if self.time_to_stop() {
             return None;
@@ -348,7 +359,7 @@ impl<T> Engine<T> where T: Protocol {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
                         if let Ok(mv) = mv.validate(&pos) {
-                            pv.push(mv.into()).expect("INFALLIBLE");
+                            pv = Some(chess::ArcMove::from(mv).try_into().expect("INFALLIBLE"));
                         }
                     }
 
@@ -374,28 +385,39 @@ impl<T> Engine<T> where T: Protocol {
         let mut best_val = -Score::infinity();
         for mv in hash_move.into_iter().chain(pos.moves()) {
             if self.history.push(mv.into()).is_ok() {
-                if let Some((val, mut new_pv)) = self.search(ply+1, depth-1, -beta, -alpha) {
-                    let mv = self.history.pop().expect("INFALLIBLE");
-                    let val = -val;
-
-                    if val >= beta {
-                        let hash_entry = HashEntry::new(
-                            pos.zobrist_key(),
-                            self.search_count, depth,
-                            Bound::Lower, val,
-                            mv.into());
-                        self.hash.insert(hash_entry, ply);
-                        return Some((val, pv));
-                    }
-
-                    best_val = max(best_val, val);
-                    if best_val > alpha {
-                        alpha = best_val;
-                        pv = mv.try_into().expect("INFALLIBLE");
-                        pv.append(&mut new_pv).expect("INFALLIBLE");
-                    }
+                let (val, child_pv) = if pv.is_none() {
+                    self.search(ply+1, depth-1, -beta, -alpha)?
                 } else {
-                    return None;
+                    let (val, child_pv) = self.search(ply+1, depth-1, -alpha-1, -alpha)?;
+                    if -val > alpha && -val < beta {
+                        // possible new pv
+                        self.search(ply+1, depth-1, -beta, -alpha)?
+                    } else {
+                        (val, child_pv)
+                    }
+                };
+
+                let mv = self.history.pop().expect("INFALLIBLE");
+                let val = -val;
+
+                if val >= beta {
+                    let hash_entry = HashEntry::new(
+                        pos.zobrist_key(),
+                        self.search_count, depth,
+                        Bound::Lower, val,
+                        mv.into());
+                    self.hash.insert(hash_entry, ply);
+                    return Some((val, pv));
+                }
+
+                best_val = max(best_val, val);
+                if best_val > alpha {
+                    alpha = best_val;
+                    let mut new_pv: MoveSequence = mv.try_into().expect("INFALLIBLE");
+                    if let Some(mut child_pv) = child_pv {
+                        new_pv.append(&mut child_pv).expect("INFALLIBLE");
+                    }
+                    pv = Some(new_pv);
                 }
             }
         }
@@ -412,8 +434,9 @@ impl<T> Engine<T> where T: Protocol {
                 pos.zobrist_key(),
                 self.search_count, depth,
                 Bound::Exact, best_val);
-        } else if let Some(mv) = pv.first() {
+        } else if let Some(pv) = &pv {
             // pv node
+            let mv = pv.first().expect("INFALLIBLE");
             hash_entry = HashEntry::new(
                 pos.zobrist_key(),
                 self.search_count, depth,
