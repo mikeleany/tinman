@@ -197,7 +197,13 @@ impl GameSetup {
         };
         match response {
             Ok(EngineResponse::Move(mv)) => {
-                game.make_move_timed(mv, Instant::now() - start).expect("INFALLIBLE");
+                if let Err(error) = game.make_move_timed(mv, Instant::now() - start) {
+                    game.set_result(GameResult::Win(
+                        !game.position().turn(),
+                        Some(WinReason::Forfeiture)));
+                    warn!("{}", error);
+                    return (game, Err(error.into()));
+                }
             },
             Ok(EngineResponse::Resignation) => {
                 game.set_result(GameResult::Win(
@@ -222,7 +228,13 @@ impl GameSetup {
             };
             match response {
                 Ok(EngineResponse::Move(mv)) => {
-                    game.make_move_timed(mv, Instant::now() - start).expect("INFALLIBLE");
+                    if let Err(error) = game.make_move_timed(mv, Instant::now() - start) {
+                        game.set_result(GameResult::Win(
+                            !game.position().turn(),
+                            Some(WinReason::Forfeiture)));
+                        warn!("{}", error);
+                        return (game, Err(error.into()));
+                    }
                 },
                 Ok(EngineResponse::Resignation) => {
                     game.set_result(GameResult::Win(
