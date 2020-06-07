@@ -32,11 +32,15 @@ fn main() -> Result<(), Error> {
                 .long("xboard")
                 .hidden(true)
                 .help("Uses the xboard interface"))
-            .arg(Arg::with_name("log")
-                .long("log")
+            .arg(Arg::with_name("log-level")
+                .long("log-level")
                 .short("l")
                 .global(true)
-                .help("Turns on logging"))
+                .value_name("LEVEL")
+                .takes_value(true)
+                .possible_values(&["trace", "debug", "info", "warn", "error", "off"])
+                .default_value("info")
+                .help("Sets the log level or turns off logging"))
             .arg(Arg::with_name("log-file")
                 .long("log-file")
                 .global(true)
@@ -44,16 +48,9 @@ fn main() -> Result<(), Error> {
                 .takes_value(true)
                 .default_value("tinman.log")
                 .help("Sets the log file if logging is turned on"))
-            .arg(Arg::with_name("log-level")
-                .long("log-level")
-                .global(true)
-                .value_name("LEVEL")
-                .takes_value(true)
-                .default_value("info")
-                .help("Sets the log level if logging is turned on"))
             .subcommand(SubCommand::with_name("counts")
                 .about("Counts the number of variations from a given starting position \
-                        to a specified\ndepth. Defaults to the standard starting position.")
+                        to a specified depth.")
                 .arg(Arg::with_name("depth")
                     .long("depth")
                     .short("d")
@@ -66,7 +63,8 @@ fn main() -> Result<(), Error> {
                     .default_value("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
                     .hide_default_value(true)
                     .multiple(true)
-                    .help("Position to search in Forsyth-Edwards Notation (FEN)")))
+                    .help("Position(s) to search in Forsyth-Edwards Notation (FEN) [defaults to the \
+                           standard starting position]")))
             .get_matches();
 
     let log_file = PathBuf::from(matches.value_of_os("log-file").expect("INFALLIBLE"));
@@ -81,7 +79,7 @@ fn main() -> Result<(), Error> {
         None => unreachable!(),
     };
 
-    let _logger = if matches.is_present("log") {
+    let _logger = if log_level != LevelFilter::Off {
         WriteLogger::init(
             log_level,
             Config::default(),

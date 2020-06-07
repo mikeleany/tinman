@@ -45,22 +45,20 @@ fn main() -> Result<(), Error> {
                 .about("Sets up a new test environment in the current or given directory"))
             .subcommand(SubCommand::with_name("run")
                 .about("Runs the tests")
-                .arg(Arg::with_name("log")
-                    .long("log")
+                .arg(Arg::with_name("log-level")
+                    .long("log-level")
                     .short("l")
-                    .help("Turns on logging"))
+                    .value_name("LEVEL")
+                    .takes_value(true)
+                    .possible_values(&["trace", "debug", "info", "warn", "error", "off"])
+                    .default_value("info")
+                    .help("Sets the log level or turns off logging"))
                 .arg(Arg::with_name("log-file")
                     .long("log-file")
                     .value_name("LOG_FILE")
                     .takes_value(true)
                     .default_value("testing.log")
-                    .help("Sets the log file if logging is turned on"))
-                .arg(Arg::with_name("log-level")
-                    .long("log-level")
-                    .value_name("LEVEL")
-                    .takes_value(true)
-                    .default_value("info")
-                    .help("Sets the log level if logging is turned on")))
+                    .help("Sets the log file if logging is turned on")))
             .subcommand(SubCommand::with_name("add")
                 .about("Adds a new engine")
                 .arg(Arg::with_name("candidate")
@@ -228,7 +226,7 @@ fn run(matches: &ArgMatches, paths: &Paths) -> Result<(), Error> {
         Some(level) => return Err(Error(format!("{}: invalid log level", level))),
         None => unreachable!(),
     };
-    let _logger = if matches.is_present("log") {
+    let _logger = if log_level != LevelFilter::Off {
         WriteLogger::init(
             log_level,
             Config::default(),
