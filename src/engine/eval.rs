@@ -159,16 +159,28 @@ pub fn evaluate(pos: &Position) -> Score {
     let mut val = [0; Color::COUNT];
     let mut total_piece_val = 0;
 
+    let mut knights = [0; Color::COUNT];
+    let mut bishops = [0; Color::COUNT];
+    let mut good_pieces = [false; Color::COUNT];
+
     for color in [White, Black].iter().copied() {
         for piece in [Pawn, Knight, Bishop, Rook, Queen].iter().copied() {
+            let mut count = 0;
             for sq in pos.occupied_by_piece(color, piece) {
+                count += 1;
                 let sq = if color == White { sq as usize } else { sq as usize ^ 0o07 };
                 val[color as usize] += PIECE_VAL[piece as usize]
                     + PIECE_SQUARE_VAL[piece as usize][sq as usize];
-
             }
-            total_piece_val += pos.occupied_by_piece(color, piece).len() as i16
-                * PIECE_VAL[piece as usize];
+            total_piece_val += count * PIECE_VAL[piece as usize];
+
+            if count > 0 {
+                match piece {
+                    Knight => knights[color as usize] = count,
+                    Bishop => bishops[color as usize] = count,
+                    _ => good_pieces[color as usize] = true,
+                }
+            }
         }
     }
 
@@ -185,7 +197,21 @@ pub fn evaluate(pos: &Position) -> Score {
         }
     }
 
-    (val[pos.turn() as usize] - val[!pos.turn() as usize]).into()
+    let val = val[pos.turn() as usize] - val[!pos.turn() as usize];
+
+    let strong_side = if val > 0 { pos.turn() } else { !pos.turn() };
+    let weak_side = !strong_side as usize;
+    let strong_side = strong_side as usize;
+
+    if good_pieces[strong_side]
+    || bishops[strong_side] + knights[strong_side] > 2
+    || (bishops[strong_side] == 2 && bishops[weak_side] == 0) {
+        return val.into();
+    } else if good_pieces[weak_side] || bishops[weak_side] > 0 || knights[weak_side] > 0 {
+        return (val/25).into();
+    } else {
+        return 0.into();
+    }
 }
 
 #[cfg(test)]

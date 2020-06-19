@@ -351,7 +351,7 @@ impl<T> Engine<T> where T: Protocol {
         // transposition table lookup
         let hash_move;
         if let Some(hash) = self.hash.get(pos.zobrist_key(), ply) {
-            if hash.depth() >= depth {
+            if hash.depth() >= depth && ply > 1 {
                 if (hash.score() >= beta && hash.bound() != Bound::Upper)
                 || (hash.score() <= alpha && hash.bound() != Bound::Lower) {
                     return Some((hash.score(), pv));
