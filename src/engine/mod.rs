@@ -351,11 +351,11 @@ impl<T> Engine<T> where T: Protocol {
         // transposition table lookup
         let hash_move;
         if let Some(hash) = self.hash.get(pos.zobrist_key(), ply) {
-            if hash.depth() >= depth && ply > 1 {
+            if hash.depth() >= depth {
                 if (hash.score() >= beta && hash.bound() != Bound::Upper)
                 || (hash.score() <= alpha && hash.bound() != Bound::Lower) {
                     return Some((hash.score(), pv));
-                } else if hash.bound() == Bound::Exact {
+                } else if hash.bound() == Bound::Exact && ply > 1 {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
                         if let Ok(mv) = mv.validate(&pos) {

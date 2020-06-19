@@ -1,6 +1,6 @@
 [package]
 name = "tinman"
-version = "0.4.0-dev0-twk1"
+version = "0.4.0-dev0-twk2"
 authors = ["Mike Leany <55358344+mikeleany@users.noreply.github.com>"]
 license = "MPL-2.0"
 edition = "2018"
