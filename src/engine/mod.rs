@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
 use crate::chess;
-use chess::{Position, ValidMove, Piece};
+use chess::{Position, ValidMove, Move, Piece};
 use chess::game::{MoveSequence, TimeControl};
 use crate::protocol::{Protocol, Action, SearchAction};
 
@@ -269,11 +269,11 @@ impl<T> Engine<T> where T: Protocol {
             for (n, seq) in move_list.iter().enumerate() {
                 self.history.append(&mut seq.clone()).expect("INFALLIBLE");
                 let search_result = if best_val == -Score::infinity() {
-                    self.search(1, depth-1, -Score::infinity(), -best_val)
+                    self.search(1, depth-1, -Score::infinity(), -best_val, false)
                 } else {
-                    let search_result = self.search(1, depth-1, -best_val-1, -best_val);
+                    let search_result = self.search(1, depth-1, -best_val-1, -best_val, false);
                     if search_result.as_ref().map_or(false, |&(val, _)| -val > best_val) {
-                        self.search(1, depth-1, -Score::infinity(), -best_val)
+                        self.search(1, depth-1, -Score::infinity(), -best_val, false)
                     } else {
                         search_result
                     }
@@ -330,7 +330,8 @@ impl<T> Engine<T> where T: Protocol {
     /// principle variation of the best move.
     fn search(&mut self,
         ply: usize, mut depth: u8,
-        mut alpha: Score, beta: Score)
+        mut alpha: Score, beta: Score,
+        null_move_allowed: bool)
     -> Option<(Score, Option<MoveSequence>)> {
         let pos = Arc::clone(self.history.final_position());
         let mut pv = None;
@@ -381,17 +382,32 @@ impl<T> Engine<T> where T: Protocol {
             }
         }
 
+        // null move
+        if null_move_allowed && !pos.in_check() && alpha + 1 == beta
+        && (depth < 4 || evaluate(&pos) >= beta) {
+            let mv = Move::null_move(&pos);
+            if self.history.push(mv.into()).is_ok() {
+                const R: u8 = 2;
+                let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R), -beta, -beta+1, false)?;
+                self.history.pop();
+
+                if -val >= beta {
+                    return Some((-val, pv));
+                }
+            }
+        }
+
         // search each move
         let mut best_val = -Score::infinity();
         for mv in hash_move.into_iter().chain(pos.moves()) {
             if self.history.push(mv.into()).is_ok() {
                 let (val, child_pv) = if pv.is_none() {
-                    self.search(ply+1, depth-1, -beta, -alpha)?
+                    self.search(ply+1, depth-1, -beta, -alpha, true)?
                 } else {
-                    let (val, child_pv) = self.search(ply+1, depth-1, -alpha-1, -alpha)?;
+                    let (val, child_pv) = self.search(ply+1, depth-1, -alpha-1, -alpha, true)?;
                     if -val > alpha && -val < beta {
                         // possible new pv
-                        self.search(ply+1, depth-1, -beta, -alpha)?
+                        self.search(ply+1, depth-1, -beta, -alpha, true)?
                     } else {
                         (val, child_pv)
                     }

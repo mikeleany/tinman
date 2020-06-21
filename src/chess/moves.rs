@@ -28,6 +28,8 @@ pub enum MoveType {
     EnPassant,
     /// A pawn promotion to the given piece type
     Promotion(Promotion),
+    /// Skip this player's move (not legal, but useful to the engine)
+    NullMove,
 }
 
 impl MoveType {
@@ -138,6 +140,24 @@ pub struct Move<'a> {
     pub (super) dest: Square,
     pub (super) capt_pc: Option<Piece>,
     pub (super) move_type: MoveType,
+}
+
+impl<'a> Move<'a> {
+    /// Returns a null move for the given position.
+    ///
+    /// Null moves are not actually legal moves, but are useful to the engine.
+    pub fn null_move(pos: &'a Position) -> Move<'a> {
+        let orig = pos.king_location(pos.turn());
+
+        Move {
+            pos,
+            piece: Piece::King,
+            orig,
+            dest: orig,
+            capt_pc: None,
+            move_type: MoveType::NullMove,
+        }
+    }
 }
 
 impl<'a> ValidMove for Move<'a> {
