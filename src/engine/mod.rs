@@ -384,7 +384,9 @@ impl<T> Engine<T> where T: Protocol {
 
         // null move
         if null_move_allowed && !pos.in_check() && alpha + 1 == beta
-        && (depth < 4 || evaluate(&pos) >= beta) {
+        && (depth < 4 || evaluate(&pos) >= beta)
+        && !(pos.occupied_by(pos.turn()) & !pos.occupied_by_piece(pos.turn(), Piece::Pawn)
+        & !pos.occupied_by_piece(pos.turn(), Piece::King)).is_empty() {
             let mv = Move::null_move(&pos);
             if self.history.push(mv.into()).is_ok() {
                 const R: u8 = 2;
