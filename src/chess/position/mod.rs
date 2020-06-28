@@ -453,6 +453,10 @@ impl Position {
 
     /// Make the move, returning the resulting position.
     pub fn make_move<T: ValidMove>(mv: &T) -> Result<Position> {
+        if mv.move_type() == MoveType::NullMove {
+            return mv.position().make_null_move();
+        }
+
         let mut pos = mv.position().clone();
 
         // clear captured piece (including en passant)
@@ -605,6 +609,33 @@ impl Position {
                 pos.square_attacked_by_sliding(pos.king_location(pos.turn()), !pos.turn())
             }
         };
+
+        Ok(pos)
+    }
+
+    /// Make a null move. This is not a legal move, but can be useful to the chess engine.
+    pub fn make_null_move(&self) -> Result<Position> {
+        let mut pos = self.clone();
+
+        // verify mover is not in check
+        if pos.in_check() {
+            return Err(Error::KingCapturable);
+        }
+
+        // update en passant square
+        if let Some(ep_sq) = pos.en_passant_square() {
+            pos.zobrist.toggle_ep_square(ep_sq);
+            pos.ep_square = None;
+        }
+
+        // switch turns
+        pos.turn = !pos.turn();
+        pos.zobrist.toggle_turn();
+
+        // update move counter
+        if pos.turn() == White {
+            pos.move_num += 1;
+        }
 
         Ok(pos)
     }
