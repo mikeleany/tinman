@@ -1,19 +1,19 @@
-[workspace]
-members = ["tinman-test"]
-
 [package]
-name = "tinman"
-version = "0.4.1-dev0-workspace"
+name = "tinman-test"
+version = "0.5.0-dev0-workspace"
 authors = ["Mike Leany <55358344+mikeleany@users.noreply.github.com>"]
 license = "MPL-2.0"
 edition = "2018"
 
 [dependencies]
-regex = "1.3.1"
-lazy_static = "1.4.0"
+tinman = { path = ".." }
 log = "0.4.8"
 simplelog = "0.7.4"
-dirs = "2.0.2"
+serde = "1.0"
+serde_yaml = "0.8"
+rand = "0.7.3"
+chrono = "0.4.10"
+hostname = "0.3.0"
 
 [dependencies.clap]
 version = "2.33.0"
