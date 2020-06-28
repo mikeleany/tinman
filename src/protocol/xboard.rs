@@ -1642,6 +1642,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[ignore]
     fn format_command() {
         use Command::*;
 

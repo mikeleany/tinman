@@ -888,7 +888,7 @@ mod tests {
 
     #[test]
     fn bishop_to_c3() -> Result<(), crate::chess::Error> {
-        use crate::chess::{Position, MoveBuilder, ValidMove, Piece};
+        use crate::chess::{MoveBuilder, ValidMove, Piece};
 
         let pos = "r3k2r/p1ppqp2/Bn2pbp1/3PN3/4P3/2p4p/PPPB1PPP/R3K2R w KQkq - 0 3".parse()?;
         let mv = "Bc3".parse::<MoveBuilder>()?
