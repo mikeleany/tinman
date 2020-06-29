@@ -25,7 +25,7 @@ use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
 use tinman::client::GameSetup;
 use chess::game::{MoveSequence, TimeControl};
-use tinman::pgn::read_pgn_games;
+use tinman_test::pgn::read_pgn_games;
 
 fn main() -> Result<(), Error> {
     let matches =
@@ -468,8 +468,8 @@ impl From<chess::Error> for Error {
     }
 }
 
-impl From<tinman::pgn::PgnParseError> for Error {
-    fn from(err: tinman::pgn::PgnParseError) -> Self {
+impl From<tinman_test::pgn::PgnParseError> for Error {
+    fn from(err: tinman_test::pgn::PgnParseError) -> Self {
         Error(err.to_string())
     }
 }

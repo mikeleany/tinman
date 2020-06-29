@@ -29,6 +29,10 @@
 //! [`Position::moves`](struct.Position.html#method.moves) and
 //! [`Position::promotions_and_captures()`](struct.Position.html#method.promotions_and_captures).
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+#![warn(missing_docs, missing_debug_implementations, unused_extern_crates)]
+#![warn(clippy::unimplemented, clippy::todo)]
+#![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
+
 use std::ops;
 use std::fmt;
 use std::mem;
