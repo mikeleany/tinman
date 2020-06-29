@@ -19,8 +19,8 @@
 //! squares attacked by a knight on h1 can be computed as follows:
 //!
 //! ```rust
-//! use tinman::chess::Square;
-//! use tinman::chess::bitboard::knight_attacks;
+//! use chess::Square;
+//! use chess::bitboard::knight_attacks;
 //!
 //! let mut attacks = knight_attacks(Square::H1);
 //! assert_eq!(attacks.pop(), Some(Square::F2));
@@ -36,8 +36,8 @@
 //! example of rook attacks:
 //!
 //! ```rust
-//! use tinman::chess::Square;
-//! use tinman::chess::bitboard::{Bitboard, rook_attacks};
+//! use chess::Square;
+//! use chess::bitboard::{Bitboard, rook_attacks};
 //!
 //! let occ = Bitboard::from(Square::A2) | Square::C1.into();
 //! let mut attacks = rook_attacks(Square::A1, occ);
@@ -63,8 +63,8 @@
 //! code does not account for blocked pawns.
 //!
 //! ```rust
-//! use tinman::chess::Square;
-//! use tinman::chess::bitboard::Bitboard;
+//! use chess::Square;
+//! use chess::bitboard::Bitboard;
 //!
 //! let forward = -1; // black's turn, for white this would be 1
 //! let pawns = Bitboard::from(Square::A7) | Square::B2.into();
@@ -77,8 +77,8 @@
 //! The next example demonstrates how to compute pawn attacks:
 //!
 //! ```rust
-//! use tinman::chess::Square;
-//! use tinman::chess::bitboard::Bitboard;
+//! use chess::Square;
+//! use chess::bitboard::Bitboard;
 //!
 //! let forward = -1; // black's turn, for white this would be 1
 //! let pawns = Bitboard::from(Square::A7) | Square::B2.into();
@@ -237,8 +237,8 @@ impl Bitboard {
     /// Rank overflow wraps to the next file, as seen below.
     ///
     /// ```rust
-    /// # use tinman::chess::Square;
-    /// # use tinman::chess::bitboard::Bitboard;
+    /// # use chess::Square;
+    /// # use chess::bitboard::Bitboard;
     /// #
     /// assert_eq!(Bitboard::from(Square::A8).shift_y(1), Bitboard::from(Square::B1));
     /// assert_eq!(Bitboard::from(Square::B1).shift_y(-1), Bitboard::from(Square::A8));

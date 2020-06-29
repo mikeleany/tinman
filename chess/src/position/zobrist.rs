@@ -77,7 +77,7 @@ impl From<Zobrist> for u64 {
     ///
     /// # Example
     /// ```rust
-    /// use tinman::chess::Position;
+    /// use chess::Position;
     ///
     /// let pos = Position::new();
     /// let hash_table_size: usize = 0x10_0000;

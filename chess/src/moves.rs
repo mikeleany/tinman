@@ -410,9 +410,9 @@ impl fmt::Display for ArcMove {
 /// Below is how `MoveBuilder` might be used in combination with a hash.
 ///
 /// ```rust
-/// use tinman::chess::{Square, Promotion};
-/// use tinman::chess::{Position, Move, MoveBuilder};
-/// use tinman::chess::Result;
+/// use chess::{Square, Promotion};
+/// use chess::{Position, Move, MoveBuilder};
+/// use chess::Result;
 ///
 /// struct HashMove {
 ///     orig: Square,
@@ -429,8 +429,8 @@ impl fmt::Display for ArcMove {
 ///         .validate(pos)
 /// }
 ///
-/// # use tinman::chess::PositionBuilder;
-/// # use tinman::chess::{Color, Piece};
+/// # use chess::PositionBuilder;
+/// # use chess::{Color, Piece};
 /// #
 /// # fn hash_entry(pos: &Position) -> HashMove {
 /// #     match pos.piece_at(Square::A7) {
@@ -451,19 +451,19 @@ impl fmt::Display for ArcMove {
 /// # let pos = Position::new();
 /// # get_hash_move(&pos)?;
 /// #
-/// # Ok::<(), tinman::chess::Error>(())
+/// # Ok::<(), chess::Error>(())
 /// ```
 ///
 /// `MoveBuilder` can also be used to parse a `Move` from a string.
 ///
 /// ```rust
-/// use tinman::chess::{Position, MoveBuilder, ValidMove};
+/// use chess::{Position, MoveBuilder, ValidMove};
 ///
 /// let pos = Position::new();
 /// let move_str = "Nf3"; // string would usually come from a user
 ///
 /// let new_pos = move_str.parse::<MoveBuilder>()?.validate(&pos)?.make()?;
-/// # Ok::<(), tinman::chess::Error>(())
+/// # Ok::<(), chess::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MoveBuilder {
@@ -887,8 +887,8 @@ mod tests {
     }
 
     #[test]
-    fn bishop_to_c3() -> Result<(), crate::chess::Error> {
-        use crate::chess::{MoveBuilder, ValidMove, Piece};
+    fn bishop_to_c3() -> Result<(), crate::Error> {
+        use crate::{MoveBuilder, ValidMove, Piece};
 
         let pos = "r3k2r/p1ppqp2/Bn2pbp1/3PN3/4P3/2p4p/PPPB1PPP/R3K2R w KQkq - 0 3".parse()?;
         let mv = "Bc3".parse::<MoveBuilder>()?
@@ -900,8 +900,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_e4() -> Result<(), crate::chess::Error> {
-        use crate::chess::{Position, MoveBuilder, ValidMove, Square};
+    fn validate_e4() -> Result<(), crate::Error> {
+        use crate::{Position, MoveBuilder, ValidMove, Square};
 
         let pos = Position::default();
         let mv = "e4".parse::<MoveBuilder>()?

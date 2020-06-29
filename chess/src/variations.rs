@@ -7,7 +7,7 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use crate::chess::*;
+use crate::*;
 
 /// Print the number of variations of the given `depth` for each legal move from `pos`
 pub fn print(pos: &Position, depth: usize) -> usize {

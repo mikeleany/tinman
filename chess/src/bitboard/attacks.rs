@@ -432,8 +432,8 @@ const FILE_ATTACKS: [[Bitboard; 64]; Rank::COUNT] = [
 /// king and a rook as required for castling.
 ///
 /// ```rust
-/// use tinman::chess::Square;
-/// use tinman::chess::bitboard::{Bitboard, rank_attacks};
+/// use chess::Square;
+/// use chess::bitboard::{Bitboard, rank_attacks};
 ///
 /// // squares occupied by white rooks
 /// let rooks = Bitboard::from(Square::A1) | Square::H1.into();

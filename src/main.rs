@@ -15,7 +15,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use clap::{App, Arg, SubCommand, crate_version};
 use simplelog::{WriteLogger, LevelFilter, Config};
-use tinman::chess::variations;
+use chess::variations;
 use tinman::engine::Engine;
 use tinman::protocol::xboard::Xboard;
 

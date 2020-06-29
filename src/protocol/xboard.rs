@@ -18,8 +18,7 @@ use log::{debug, info, error};
 use lazy_static::lazy_static;
 use regex::{RegexSet, Regex};
 use super::{Protocol, Action, SearchAction, io};
-use crate::chess;
-use crate::chess::game::{Game, TimeControl, GameResult};
+use chess::game::{Game, TimeControl, GameResult};
 use crate::engine::Thinking;
 use crate::client::{EngineInterface, EngineResponse, EngineError};
 

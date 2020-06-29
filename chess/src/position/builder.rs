@@ -15,8 +15,8 @@ use super::*;
 /// A simple example with only two kings and a pawn:
 ///
 /// ```rust
-/// use tinman::chess::PositionBuilder;
-/// use tinman::chess::{Color, Piece, Square};
+/// use chess::PositionBuilder;
+/// use chess::{Color, Piece, Square};
 ///
 /// let pos = PositionBuilder::new()
 ///     .piece(Color::White, Piece::King, Square::E1)
@@ -24,7 +24,7 @@ use super::*;
 ///     .piece(Color::Black, Piece::King, Square::E8)
 ///     .turn(Color::White)
 ///     .validate()?;
-/// # Ok::<(), tinman::chess::Error>(())
+/// # Ok::<(), chess::Error>(())
 /// ```
 #[derive(Clone)]
 #[allow(missing_debug_implementations)] // TODO: derive debug when it becomes possible

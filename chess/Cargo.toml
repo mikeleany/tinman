@@ -1,0 +1,8 @@
+[package]
+name = "chess"
+version = "0.1.0-dev0-workspace"
+authors = ["Mike Leany <55358344+mikeleany@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+regex = "1.3.1"

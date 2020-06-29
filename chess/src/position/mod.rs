@@ -39,8 +39,8 @@ use Piece::*;
 /// A typical flow might look something like this:
 ///
 /// ```rust
-/// use tinman::chess::Position;
-/// use tinman::chess::ValidMove;
+/// use chess::Position;
+/// use chess::ValidMove;
 ///
 /// let pos = Position::new();
 ///

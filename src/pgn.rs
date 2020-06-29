@@ -11,7 +11,6 @@ use std::fmt;
 use std::io;
 use std::io::{Read, BufRead, BufReader};
 use std::collections::HashMap;
-use crate::chess;
 use chess::game::{Game, MoveSequence, GameResult};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

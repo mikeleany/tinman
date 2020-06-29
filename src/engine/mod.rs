@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
-use crate::chess;
 use chess::{Position, ValidMove, Move, Piece};
 use chess::game::{MoveSequence, TimeControl};
 use crate::protocol::{Protocol, Action, SearchAction};

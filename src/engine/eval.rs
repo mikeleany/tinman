@@ -8,7 +8,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 use std::ops;
-use crate::chess::{Color, Piece, Square, Position};
+use chess::{Color, Piece, Square, Position};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Score
@@ -217,7 +217,7 @@ pub fn evaluate(pos: &Position) -> Score {
 #[cfg(test)]
 mod eval_test {
     use std::str::FromStr;
-    use crate::chess::Position;
+    use chess::Position;
     use super::{Score, evaluate};
 
     #[test]

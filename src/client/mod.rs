@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::fmt;
 use std::sync::mpsc;
-use crate::chess;
 use chess::game::{Game, TimeControl, MoveSequence, GameResult, WinReason};
 use log::warn;
 

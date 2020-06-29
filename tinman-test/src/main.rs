@@ -24,7 +24,7 @@ use rand::seq::SliceRandom;
 use chrono::Local;
 use tinman::protocol::xboard::XboardClient;
 use tinman::client::GameSetup;
-use tinman::chess::game::{MoveSequence, TimeControl};
+use chess::game::{MoveSequence, TimeControl};
 use tinman::pgn::read_pgn_games;
 
 fn main() -> Result<(), Error> {
@@ -462,8 +462,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<tinman::chess::Error> for Error {
-    fn from(err: tinman::chess::Error) -> Self {
+impl From<chess::Error> for Error {
+    fn from(err: chess::Error) -> Self {
         Error(err.to_string())
     }
 }

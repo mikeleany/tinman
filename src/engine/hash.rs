@@ -10,8 +10,8 @@
 use std::num::NonZeroU16;
 use std::convert::TryFrom;
 use std::mem::size_of;
-use crate::chess::{Square, Promotion, Move, ValidMove, MoveBuilder, Position, Zobrist};
-use crate::chess::Result;
+use chess::{Square, Promotion, Move, ValidMove, MoveBuilder, Position, Zobrist};
+use chess::Result;
 use crate::engine::Score;
 
 

@@ -43,7 +43,7 @@ pub use error::*;
 /// `Color` implements `Not`, so that we can do the following:
 ///
 /// ```rust
-/// use tinman::chess::Color;
+/// use chess::Color;
 /// 
 /// let mut turn = Color::White;
 /// turn = !turn;
@@ -341,7 +341,7 @@ impl From<Rank> for usize {
 /// In addition to using variants, a `Square` can be constructed from its `File` and `Rank`.
 ///
 /// ```rust
-/// use tinman::chess::{Square, File, Rank};
+/// use chess::{Square, File, Rank};
 ///
 /// assert_eq!(Square::from_coord(File::A, Rank::R1), Square::A1);
 /// ```
@@ -349,7 +349,7 @@ impl From<Rank> for usize {
 /// It can also be decomposed as follows:
 ///
 /// ```rust
-/// use tinman::chess::{Square, File, Rank};
+/// use chess::{Square, File, Rank};
 ///
 /// let square = Square::A1;
 /// assert_eq!((square.file(), square.rank()), (File::A, Rank::R1));
