@@ -19,6 +19,4 @@
 #![warn(clippy::unimplemented, clippy::todo)]
 #![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
 
-pub mod protocol;
 pub mod engine;
-pub mod client;

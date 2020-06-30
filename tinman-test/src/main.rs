@@ -22,8 +22,8 @@ use log::error;
 use simplelog::{WriteLogger, LevelFilter, Config};
 use rand::seq::SliceRandom;
 use chrono::Local;
-use tinman::protocol::xboard::XboardClient;
-use tinman::client::GameSetup;
+use protocols::xboard::XboardClient;
+use protocols::client::GameSetup;
 use chess::game::{MoveSequence, TimeControl};
 use tinman_test::pgn::read_pgn_games;
 

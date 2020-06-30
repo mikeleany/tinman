@@ -10,13 +10,13 @@
 
 use std::cmp::max;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
 use chess::{Position, ValidMove, Move, Piece};
 use chess::game::{MoveSequence, TimeControl};
-use crate::protocol::{Protocol, Action, SearchAction};
+use protocols::{Protocol, Action, SearchAction, Thinking};
 
 mod eval;
 use eval::{evaluate, piece_val};
@@ -24,69 +24,6 @@ pub use eval::Score;
 
 mod hash;
 use hash::{HashTable, HashEntry, Bound};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Thinking output
-#[derive(Debug, Clone)]
-pub struct Thinking {
-    score: Score,
-    depth: u8,
-    time: Duration,
-    nodes: u64,
-    pv: MoveSequence,
-}
-
-impl Thinking {
-    fn new(pos: Arc<Position>) -> Self {
-        Thinking {
-            score: -Score::infinity(),
-            depth: 0,
-            time: Duration::from_secs(0),
-            nodes: 1,
-            pv: MoveSequence::starting_at(pos),
-        }
-    }
-
-    /// Returns the estimated score for the principle variation.
-    pub fn score(&self) -> Score {
-        self.score
-    }
-
-    /// Returns the search depth that was reached.
-    pub fn depth(&self) -> usize {
-        self.depth as usize
-    }
-
-    /// Returns the amount of time used for the search.
-    pub fn time(&self) -> Duration {
-        self.time
-    }
-
-    /// Returns the number of nodes searched.
-    pub fn nodes(&self) -> u64 {
-        self.nodes
-    }
-
-    /// Returns the average number of nodes searched per second.
-    pub fn nps(&self) -> u64 {
-        self.nodes/self.time.as_secs()
-    }
-
-    /// Returns the principle variation.
-    pub fn pv(&self) -> &MoveSequence {
-        &self.pv
-    }
-
-    /// Returns the best move found in the search.
-    pub fn best_move(&self) -> Option<&chess::ArcMove> {
-        self.pv.first()
-    }
-
-    /// Returns the best move to ponder on.
-    pub fn ponder_move(&self) -> Option<&chess::ArcMove> {
-        self.pv.get(1)
-    }
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// The engine
@@ -225,7 +162,8 @@ impl<T> Engine<T> where T: Protocol {
 
     /// Search the current or ponder position for the best move, returning the thinking ouptput.
     fn search_root(&mut self) -> Option<Thinking> {
-        let mut thinking = Thinking::new(Arc::clone(self.history.final_position()));
+        let mut thinking = Thinking::new();
+        thinking.set_nodes(1);
         let mut move_list: VecDeque<MoveSequence> = VecDeque::new();
         self.search_count += 1;
         self.nodes = 1;
@@ -285,41 +223,43 @@ impl<T> Engine<T> where T: Protocol {
                     if val > best_val {
                         best_val = val;
                         best_move = n;
-                        thinking.score = best_val;
-                        thinking.depth = depth;
-                        thinking.pv = seq.clone();
+                        let mut pv = seq.clone();
                         if let Some(mut child_pv) = child_pv {
-                            thinking.pv.append(&mut child_pv).expect("INFALLIBLE");
+                            pv.append(&mut child_pv).expect("INFALLIBLE");
                         }
+                        thinking.set_pv(pv, best_val.into());
+                        thinking.set_depth(depth);
                     }
                 } else if self.abort {
                     return None;
                 } else {
-                    thinking.depth = depth;
-                    thinking.time = self.start_time.elapsed();
-                    thinking.nodes = self.nodes;
+                    thinking.set_depth(depth);
+                    thinking.set_time(self.start_time.elapsed());
+                    thinking.set_nodes(self.nodes);
                     return Some(thinking);
                 }
             }
 
-            for (i, mv) in thinking.pv.iter().enumerate() {
-                let depth = thinking.depth - i as u8;
-                let hash_entry = HashEntry::new(
-                    mv.position().zobrist_key(),
-                    self.search_count, depth,
-                    Bound::Exact, thinking.score,
-                    mv.clone().into());
-                self.hash.insert(hash_entry, i);
+            if let Some(pv) = thinking.pv() {
+                for (i, mv) in pv.iter().enumerate() {
+                    let depth = (thinking.depth() - i) as u8;
+                    let hash_entry = HashEntry::new(
+                        mv.position().zobrist_key(),
+                        self.search_count, depth,
+                        Bound::Exact, thinking.score().into(),
+                        mv.clone().into());
+                    self.hash.insert(hash_entry, i);
+                }
             }
 
-            thinking.depth = depth;
-            thinking.time = self.start_time.elapsed();
-            thinking.nodes = self.nodes;
+            thinking.set_depth(depth);
+            thinking.set_time(self.start_time.elapsed());
+            thinking.set_nodes(self.nodes);
             self.protocol.send_thinking(&thinking);
         }
 
-        thinking.time = self.start_time.elapsed();
-        thinking.nodes = self.nodes;
+        thinking.set_time(self.start_time.elapsed());
+        thinking.set_nodes(self.nodes);
 
         Some(thinking)
     }

@@ -70,6 +70,29 @@ impl From<Score> for i16 {
     }
 }
 
+impl From<protocols::Score> for Score {
+    fn from(score: protocols::Score) -> Self {
+        match score {
+            protocols::Score::MateIn(plies) if plies > 0 => Score::infinity() - plies.into(),
+            protocols::Score::Val(val) => Score(val),
+            protocols::Score::MateIn(plies) /* plies <= 0 */ => -Score::infinity() - plies.into(),
+        }
+    }
+}
+
+impl From<Score> for protocols::Score {
+    fn from(val: Score) -> Self {
+        if val > Score::mates_in(512) {
+            protocols::Score::MateIn(Score::infinity().0 - val.0)
+        }
+        else if val < Score::mated_in(512) {
+            protocols::Score::MateIn(-Score::infinity().0 - val.0)
+        } else {
+            protocols::Score::Val(val.0)
+        }
+    }
+}
+
 const PIECE_VAL: [i16; Piece::COUNT] = [ 100, 320, 330, 500, 1000, 0 ];
 
 const PIECE_SQUARE_VAL: [[i16; Square::COUNT]; Piece::COUNT] = [

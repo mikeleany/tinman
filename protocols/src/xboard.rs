@@ -17,9 +17,8 @@ use std::ffi::OsStr;
 use log::{debug, info, error};
 use lazy_static::lazy_static;
 use regex::{RegexSet, Regex};
-use super::{Protocol, Action, SearchAction, io};
+use super::{Protocol, Action, SearchAction, Thinking, io};
 use chess::game::{Game, TimeControl, GameResult};
-use crate::engine::Thinking;
 use crate::client::{EngineInterface, EngineResponse, EngineError};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -266,9 +265,15 @@ impl Protocol for Xboard {
     fn send_thinking(&mut self, thinking: &Thinking) {
         if self.post_thinking {
             let pv_string = if let Some(mv) = self.ponder_move() {
-                format!("({}) {}", mv, thinking.pv())
+                match thinking.pv() {
+                    Some(pv) => format!("({}) {}", mv, pv),
+                    None => format!("({})", mv),
+                }
             } else {
-                thinking.pv().to_string()
+                match thinking.pv() {
+                    Some(pv) => pv.to_string(),
+                    None => String::new(),
+                }
             };
 
             Response::ThinkingOutput{

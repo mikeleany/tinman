@@ -17,7 +17,7 @@ use clap::{App, Arg, SubCommand, crate_version};
 use simplelog::{WriteLogger, LevelFilter, Config};
 use chess::variations;
 use tinman::engine::Engine;
-use tinman::protocol::xboard::Xboard;
+use protocols::xboard::Xboard;
 
 fn main() -> Result<(), Error> {
     let _app_dir = dirs::home_dir()
