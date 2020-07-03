@@ -7,7 +7,7 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::sync::Arc;
+use std::ops::Deref;
 use super::*;
 use bitboard::*;
 use Piece::*;
@@ -74,52 +74,18 @@ impl From<Promotion> for Piece {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// A valid (pseudo-legal) move from a specific position.
-///
-/// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `ValidMove::make()` to verify full legality.
-pub trait ValidMove {
-    /// Returns the position from which this move is valid.
-    fn position(&self) -> &Position;
-    /// Returns the piece to be moved.
-    fn piece(&self) -> Piece;
-    /// Returns the origin of the moved piece.
-    fn origin(&self) -> Square;
-    /// Returns the destination of the moved piece.
-    fn destination(&self) -> Square;
-    /// Returns the captured piece, if any.
-    fn captured_piece(&self) -> Option<Piece>;
-    /// Returns the type of move.
-    fn move_type(&self) -> MoveType;
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct DetachedMove {
+    pub piece: Piece,
+    pub orig: Square,
+    pub dest: Square,
+    pub capt_pc: Option<Piece>,
+    pub move_type: MoveType,
+}
 
-    /// Returns the color of the piece being moved.
-    fn color(&self) -> Color {
-        self.position().turn()
-    }
-    /// Returns `true` if the move is a capture.
-    fn is_capture(&self) -> bool {
-        self.captured_piece().is_some()
-    }
-    /// Returns `true` if the move is a promotion.
-    fn is_promotion(&self) -> bool {
-        if let MoveType::Promotion(_) = self.move_type() {
-            true
-        } else {
-            false
-        }
-    }
-    /// Returns the type of promotion, if any
-    fn promotion(&self) -> Option<Promotion> {
-        if let MoveType::Promotion(prom_pc) = self.move_type() {
-            Some(prom_pc)
-        } else {
-            None
-        }
-    }
-    /// Make the move, returning the resulting position.
-    fn make(&self) -> Result<Position> where Self: std::marker::Sized {
-        Position::make_move(self)
+impl DetachedMove {
+    pub (crate) fn attach<P: Deref<Target = Position>>(self, pos: P) -> Move<P> {
+        Move { pos, m: self }
     }
 }
 
@@ -133,55 +99,107 @@ pub trait ValidMove {
 ///
 /// See the [ValidMove](trait.ValidMove.html) trait for a list of methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Move<'a> {
-    pub (super) pos: &'a Position,
-    pub (super) piece: Piece,
-    pub (super) orig: Square,
-    pub (super) dest: Square,
-    pub (super) capt_pc: Option<Piece>,
-    pub (super) move_type: MoveType,
+pub struct Move<P: Deref<Target = Position>> {
+    pos: P,
+    m: DetachedMove,
 }
 
-impl<'a> Move<'a> {
+impl<P: Deref<Target = Position>> Move<P> {
     /// Returns a null move for the given position.
     ///
     /// Null moves are not actually legal moves, but are useful to the engine.
-    pub fn null_move(pos: &'a Position) -> Move<'a> {
+    pub fn null_move(pos: P) -> Self {
         let orig = pos.king_location(pos.turn());
 
         Move {
             pos,
-            piece: Piece::King,
-            orig,
-            dest: orig,
-            capt_pc: None,
-            move_type: MoveType::NullMove,
+            m: DetachedMove {
+                piece: Piece::King,
+                orig,
+                dest: orig,
+                capt_pc: None,
+                move_type: MoveType::NullMove,
+            },
         }
     }
-}
 
-impl<'a> ValidMove for Move<'a> {
-    fn position(&self) -> &Position {
+    /// Returns a reference to the position from which this move is valid.
+    pub fn position(&self) -> &Position {
+        &self.pos
+    }
+
+    /// Returns a reference to the underlying reference or smart pointer to the position from which
+    /// this move is valid. For example, for a `Move<Arc<Position>>`, this returns the type
+    /// `&Arc<Position>`.
+    pub fn position_outer(&self) -> &P {
+        &self.pos
+    }
+
+    /// Returns the piece to be moved.
+    pub fn piece(&self) -> Piece {
+        self.m.piece
+    }
+
+    /// Returns the origin of the moved piece.
+    pub fn origin(&self) -> Square {
+        self.m.orig
+    }
+
+    /// Returns the destination of the moved piece.
+    pub fn destination(&self) -> Square {
+        self.m.dest
+    }
+
+    /// Returns the captured piece, if any.
+    pub fn captured_piece(&self) -> Option<Piece> {
+        self.m.capt_pc
+    }
+
+    /// Returns the type of move.
+    pub fn move_type(&self) -> MoveType {
+        self.m.move_type
+    }
+
+    /// Returns the color of the piece being moved.
+    pub fn color(&self) -> Color {
+        self.position().turn()
+    }
+
+    /// Returns `true` if the move is a capture.
+    pub fn is_capture(&self) -> bool {
+        self.captured_piece().is_some()
+    }
+
+    /// Returns `true` if the move is a promotion.
+    pub fn is_promotion(&self) -> bool {
+        if let MoveType::Promotion(_) = self.move_type() {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns the type of promotion, if any
+    pub fn promotion(&self) -> Option<Promotion> {
+        if let MoveType::Promotion(prom_pc) = self.move_type() {
+            Some(prom_pc)
+        } else {
+            None
+        }
+    }
+
+    /// Make the move, returning the resulting position.
+    pub fn make(&self) -> Result<Position> where Self: std::marker::Sized {
+        Position::make_move(self)
+    }
+
+    /// Returns the position where the move is valid, dropping the move itself.
+    pub (crate) fn into_position(self) -> P {
         self.pos
     }
-    fn piece(&self) -> Piece {
-        self.piece
-    }
-    fn origin(&self) -> Square {
-        self.orig
-    }
-    fn destination(&self) -> Square {
-        self.dest
-    }
-    fn captured_piece(&self) -> Option<Piece> {
-        self.capt_pc
-    }
-    fn move_type(&self) -> MoveType {
-        self.move_type
-    }
 }
 
-impl<'a> fmt::Display for Move<'a> {
+impl<P: Deref<Target = Position>> fmt::Display for Move<P> {
     /// The move is formatted as follows:
     ///
     /// "{}" -- Standard Algebraic Notation (eg Nf3, e8=Q, or O-O)
@@ -192,8 +210,8 @@ impl<'a> fmt::Display for Move<'a> {
     ///
     /// "{:+#}" -- Alternate Long Algebraic Notation (eg Ng1f3, e7e8Q, or Ke1g1)
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.move_type == MoveType::Castling && !f.alternate() {
-            match self.dest.file() {
+        if self.m.move_type == MoveType::Castling && !f.alternate() {
+            match self.m.dest.file() {
                 File::G => return "O-O".fmt(f),
                 File::C => return "O-O-O".fmt(f),
                 _ => unreachable!(),
@@ -202,50 +220,50 @@ impl<'a> fmt::Display for Move<'a> {
 
         let mut s = String::new();
 
-        if self.piece != Pawn && (!f.alternate() || f.sign_plus()) {
-            s += &self.piece.to_string();
+        if self.m.piece != Pawn && (!f.alternate() || f.sign_plus()) {
+            s += &self.m.piece.to_string();
         }
 
         if f.alternate() || f.sign_plus() {
-            s += &self.orig.to_string();
-        } else if self.piece == Pawn {
-            if self.capt_pc.is_some() {
-                s += &self.orig.file().to_string();
+            s += &self.m.orig.to_string();
+        } else if self.m.piece == Pawn {
+            if self.m.capt_pc.is_some() {
+                s += &self.m.orig.file().to_string();
             }
         } else {
-            let all_pieces = self.pos.occupied_by_piece(self.pos.turn(), self.piece);
-            let attacks = match self.piece {
+            let all_pieces = self.pos.occupied_by_piece(self.pos.turn(), self.m.piece);
+            let attacks = match self.m.piece {
                 Pawn => unreachable!(),
-                Knight => knight_attacks(self.dest),
-                Bishop => bishop_attacks(self.dest, self.pos.occupied()),
-                Rook => rook_attacks(self.dest, self.pos.occupied()),
-                Queen => queen_attacks(self.dest, self.pos.occupied()),
-                King => king_attacks(self.dest),
+                Knight => knight_attacks(self.m.dest),
+                Bishop => bishop_attacks(self.m.dest, self.pos.occupied()),
+                Rook => rook_attacks(self.m.dest, self.pos.occupied()),
+                Queen => queen_attacks(self.m.dest, self.pos.occupied()),
+                King => king_attacks(self.m.dest),
             };
             let eligible = all_pieces & attacks;
 
-            if eligible != self.orig.into() {
-                if eligible & self.orig.file().into() == self.orig.into() {
-                    s += &self.orig.file().to_string()
-                } else if eligible & self.orig.rank().into() == self.orig.into() {
-                    s += &self.orig.rank().to_string()
+            if eligible != self.m.orig.into() {
+                if eligible & self.m.orig.file().into() == self.m.orig.into() {
+                    s += &self.m.orig.file().to_string()
+                } else if eligible & self.m.orig.rank().into() == self.m.orig.into() {
+                    s += &self.m.orig.rank().to_string()
                 } else {
-                    s += &self.orig.to_string();
+                    s += &self.m.orig.to_string();
                 }
             }
         }
 
         if !f.alternate() {
-            if self.capt_pc.is_some() {
+            if self.m.capt_pc.is_some() {
                 s += "x";
             } else if f.sign_plus() {
                 s += "-";
             }
         }
 
-        s += &self.dest.to_string();
+        s += &self.m.dest.to_string();
 
-        if let MoveType::Promotion(prom_pc) = self.move_type {
+        if let MoveType::Promotion(prom_pc) = self.m.move_type {
             if !f.alternate() {
                 s += "=";
             }
@@ -261,146 +279,13 @@ impl<'a> fmt::Display for Move<'a> {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// A valid (pseudo-legal) move from a specific position, with no lifetime restrictions. 
-///
-/// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `ArcMove::make()` to verify full legality.
-///
-/// See the [ValidMove](trait.ValidMove.html) trait for a list of methods.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArcMove {
-    pos: Arc<Position>,
-    piece: Piece,
-    orig: Square,
-    dest: Square,
-    capt_pc: Option<Piece>,
-    move_type: MoveType,
-}
-
-impl ArcMove {
-    /// Returns the position from which this move is valid as an `Arc<Position>`.
-    pub fn position_arc(&self) -> &Arc<Position> {
-        &self.pos
-    }
-
-    /// Make the move, returning the resulting position as an `Arc<Position>`.
-    pub fn make_arc(&self) -> Result<Arc<Position>> {
-        Ok(Arc::new(self.make()?))
-    }
-}
-
-impl ValidMove for ArcMove {
-    fn position(&self) -> &Position {
-        &self.pos
-    }
-    fn piece(&self) -> Piece {
-        self.piece
-    }
-    fn origin(&self) -> Square {
-        self.orig
-    }
-    fn destination(&self) -> Square {
-        self.dest
-    }
-    fn captured_piece(&self) -> Option<Piece> {
-        self.capt_pc
-    }
-    fn move_type(&self) -> MoveType {
-        self.move_type
-    }
-}
-
-impl From<Move<'_>> for ArcMove {
-    fn from(mv: Move<'_>) -> ArcMove {
-        ArcMove {
-            pos: Arc::new(mv.pos.clone()),
-            piece: mv.piece,
-            orig: mv.orig,
-            dest: mv.dest,
-            capt_pc: mv.capt_pc,
-            move_type: mv.move_type,
+impl<P> From<Move<&Position>> for Move<P>
+    where P: From<Position> + AsRef<Position> + Deref<Target = Position> {
+    fn from(mv: Move<&Position>) -> Self {
+        Move {
+            pos: mv.pos.clone().into(),
+            m: mv.m,
         }
-    }
-}
-
-impl fmt::Display for ArcMove {
-    /// The move is formatted as follows:
-    ///
-    /// "{}" -- Standard Algebraic Notation (eg Nf3, e8=Q, or O-O)
-    ///
-    /// "{:+}" -- Long Algebraic Notation (eg Ng1-f3, e7-e8=Q, or O-O)
-    ///
-    /// "{:#}" -- Coordinate Notation (eg g1f3, e7e8q, or e1g1)
-    ///
-    /// "{:+#}" -- Alternate Long Algebraic Notation (eg Ng1f3, e7e8Q, or Ke1g1)
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.move_type == MoveType::Castling && !f.alternate() {
-            match self.dest.file() {
-                File::G => return "O-O".fmt(f),
-                File::C => return "O-O-O".fmt(f),
-                _ => unreachable!(),
-            }
-        }
-
-        let mut s = String::new();
-
-        if self.piece != Pawn && (!f.alternate() || f.sign_plus()) {
-            s += &self.piece.to_string();
-        }
-
-        if f.alternate() || f.sign_plus() {
-            s += &self.orig.to_string();
-        } else if self.piece == Pawn {
-            if self.capt_pc.is_some() {
-                s += &self.orig.file().to_string();
-            }
-        } else {
-            let all_pieces = self.pos.occupied_by_piece(self.pos.turn(), self.piece);
-            let attacks = match self.piece {
-                Pawn => unreachable!(),
-                Knight => knight_attacks(self.dest),
-                Bishop => bishop_attacks(self.dest, self.pos.occupied()),
-                Rook => rook_attacks(self.dest, self.pos.occupied()),
-                Queen => queen_attacks(self.dest, self.pos.occupied()),
-                King => king_attacks(self.dest),
-            };
-            let eligible = all_pieces & attacks;
-
-            if eligible != self.orig.into() {
-                if eligible & self.orig.file().into() == self.orig.into() {
-                    s += &self.orig.file().to_string()
-                } else if eligible & self.orig.rank().into() == self.orig.into() {
-                    s += &self.orig.rank().to_string()
-                } else {
-                    s += &self.orig.to_string();
-                }
-            }
-        }
-
-        if !f.alternate() {
-            if self.capt_pc.is_some() {
-                s += "x";
-            } else if f.sign_plus() {
-                s += "-";
-            }
-        }
-
-        s += &self.dest.to_string();
-
-        if let MoveType::Promotion(prom_pc) = self.move_type {
-            if !f.alternate() {
-                s += "=";
-            }
-
-            s += &Piece::from(prom_pc).to_string();
-        }
-
-        if f.alternate() && !f.sign_plus() {
-            s.make_ascii_lowercase();
-        }
-
-        s.fmt(f)
     }
 }
 
@@ -420,7 +305,7 @@ impl fmt::Display for ArcMove {
 ///     prom: Option<Promotion>,
 /// }
 ///
-/// fn get_hash_move(pos: &Position) -> Result<Move> {
+/// fn get_hash_move(pos: &Position) -> Result<Move<&Position>> {
 ///     let hash_move: HashMove = hash_entry(pos);
 ///     MoveBuilder::new()
 ///         .origin(hash_move.orig)
@@ -457,7 +342,7 @@ impl fmt::Display for ArcMove {
 /// `MoveBuilder` can also be used to parse a `Move` from a string.
 ///
 /// ```rust
-/// use chess::{Position, MoveBuilder, ValidMove};
+/// use chess::{Position, MoveBuilder};
 ///
 /// let pos = Position::new();
 /// let move_str = "Nf3"; // string would usually come from a user
@@ -475,7 +360,7 @@ pub struct MoveBuilder {
     castle_dest: Option<File>,
 }
 
-impl<'a> MoveBuilder {
+impl MoveBuilder {
     /// Creates a new MoveBuilder
     pub fn new() -> Self {
         MoveBuilder {
@@ -551,7 +436,7 @@ impl<'a> MoveBuilder {
     ///
     /// Note that this function does not validate if the move leaves the mover in check or if it
     /// involves castling through check. Use `Move::make()` to perform those validations.
-    pub fn validate(&self, pos: &'a Position) -> Result<Move<'a>> {
+    pub fn validate<P: Deref<Target = Position>>(&self, pos: P) -> Result<Move<P>> {
         let mut move_type = MoveType::Standard;
 
         // Step 1: Disambiguation
@@ -732,11 +617,13 @@ impl<'a> MoveBuilder {
 
         Ok(Move{
             pos,
-            piece,
-            orig,
-            dest,
-            capt_pc,
-            move_type,
+            m: DetachedMove {
+                piece,
+                orig,
+                dest,
+                capt_pc,
+                move_type,
+            },
         })
     }
 }
@@ -888,7 +775,7 @@ mod tests {
 
     #[test]
     fn bishop_to_c3() -> Result<(), crate::Error> {
-        use crate::{MoveBuilder, ValidMove, Piece};
+        use crate::{MoveBuilder, Piece};
 
         let pos = "r3k2r/p1ppqp2/Bn2pbp1/3PN3/4P3/2p4p/PPPB1PPP/R3K2R w KQkq - 0 3".parse()?;
         let mv = "Bc3".parse::<MoveBuilder>()?
@@ -901,7 +788,7 @@ mod tests {
 
     #[test]
     fn validate_e4() -> Result<(), crate::Error> {
-        use crate::{Position, MoveBuilder, ValidMove, Square};
+        use crate::{Position, MoveBuilder, Square};
 
         let pos = Position::default();
         let mv = "e4".parse::<MoveBuilder>()?
