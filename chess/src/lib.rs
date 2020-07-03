@@ -29,6 +29,10 @@
 //! [`Position::moves`](struct.Position.html#method.moves) and
 //! [`Position::promotions_and_captures()`](struct.Position.html#method.promotions_and_captures).
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+#![warn(missing_docs, missing_debug_implementations, unused_extern_crates)]
+#![warn(clippy::unimplemented, clippy::todo)]
+#![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
+
 use std::ops;
 use std::fmt;
 use std::mem;
@@ -43,7 +47,7 @@ pub use error::*;
 /// `Color` implements `Not`, so that we can do the following:
 ///
 /// ```rust
-/// use tinman::chess::Color;
+/// use chess::Color;
 /// 
 /// let mut turn = Color::White;
 /// turn = !turn;
@@ -341,7 +345,7 @@ impl From<Rank> for usize {
 /// In addition to using variants, a `Square` can be constructed from its `File` and `Rank`.
 ///
 /// ```rust
-/// use tinman::chess::{Square, File, Rank};
+/// use chess::{Square, File, Rank};
 ///
 /// assert_eq!(Square::from_coord(File::A, Rank::R1), Square::A1);
 /// ```
@@ -349,7 +353,7 @@ impl From<Rank> for usize {
 /// It can also be decomposed as follows:
 ///
 /// ```rust
-/// use tinman::chess::{Square, File, Rank};
+/// use chess::{Square, File, Rank};
 ///
 /// let square = Square::A1;
 /// assert_eq!((square.file(), square.rank()), (File::A, Rank::R1));
@@ -434,7 +438,7 @@ impl From<Square> for usize {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 pub mod bitboard;
 mod moves;
-pub use moves::{ValidMove, Move, ArcMove, MoveType, Promotion, MoveBuilder};
+pub use moves::{Move, MoveType, Promotion, MoveBuilder};
 mod position;
 pub use position::Position;
 pub use position::builder::PositionBuilder;

@@ -10,6 +10,7 @@
 use std::iter::FusedIterator;
 use std::collections::VecDeque;
 use super::*;
+use crate::moves::DetachedMove;
 use Promotion::*;
 
 
@@ -41,7 +42,7 @@ enum MovesState {
 }
 
 impl<'a> Moves<'a> {
-    pub (super) fn new(pos: &'a Position) -> Moves {
+    pub (super) fn new(pos: &'a Position) -> Self {
         Moves {
             pos,
             state: MovesState::PromAndCapt,
@@ -55,7 +56,7 @@ impl<'a> Moves<'a> {
 }
 
 impl<'a> Iterator for Moves<'a> {
-    type Item = Move<'a>;
+    type Item = Move<&'a Position>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use MovesState::*;
@@ -93,14 +94,15 @@ impl<'a> Iterator for Moves<'a> {
                 };
                 let dest = Square::from_coord(dest_file, rook.rank());
 
-                return Some(Move {
-                    pos,
-                    piece: self.piece,
-                    orig: self.orig,
-                    capt_pc: None,
-                    dest,
-                    move_type: MoveType::Castling,
-                });
+                return Some(
+                    DetachedMove {
+                        piece: self.piece,
+                        orig: self.orig,
+                        capt_pc: None,
+                        dest,
+                        move_type: MoveType::Castling,
+                    }.attach(pos)
+                );
             } else {
                 let forward = if pos.turn() == White { 1 } else { -1 };
                 self.state = PawnAdvancement(forward);
@@ -118,27 +120,29 @@ impl<'a> Iterator for Moves<'a> {
                 let orig_rank = if pos.turn() == White { Rank::R2 } else { Rank::R7 };
                 let orig = Square::from_coord(dest.file(), orig_rank);
 
-                return Some(Move {
-                    pos,
-                    piece: self.piece,
-                    orig,
-                    capt_pc: None,
-                    dest,
-                    move_type: MoveType::Advance2,
-                });
+                return Some(
+                    DetachedMove {
+                        piece: self.piece,
+                        orig,
+                        capt_pc: None,
+                        dest,
+                        move_type: MoveType::Advance2,
+                    }.attach(pos)
+                );
             } else if let Some(dest) = self.board1.pop() {
                 let orig_rank = Rank::try_from((dest.rank() as i8 - forward) as usize)
                     .expect("INFALLIBLE");
                 let orig = Square::from_coord(dest.file(), orig_rank);
 
-                return Some(Move {
-                    pos,
-                    piece: self.piece,
-                    orig,
-                    capt_pc: None,
-                    dest,
-                    move_type: MoveType::Standard,
-                });
+                return Some(
+                    DetachedMove {
+                        piece: self.piece,
+                        orig,
+                        capt_pc: None,
+                        dest,
+                        move_type: MoveType::Standard,
+                    }.attach(pos)
+                );
             } else {
                 self.state = Remaining;
                 self.piece = Knight;
@@ -148,14 +152,15 @@ impl<'a> Iterator for Moves<'a> {
 
         while let Remaining = self.state {
             if let Some(dest) = self.board2.pop() {
-                return Some(Move {
-                    pos,
-                    piece: self.piece,
-                    orig: self.orig,
-                    capt_pc: None,
-                    dest,
-                    move_type: MoveType::Standard,
-                });
+                return Some(
+                    DetachedMove {
+                        piece: self.piece,
+                        orig: self.orig,
+                        capt_pc: None,
+                        dest,
+                        move_type: MoveType::Standard,
+                    }.attach(pos)
+                );
             } else if let Some(orig) = self.board1.pop() {
                 self.orig = orig;
                 self.board2 = !pos.occupied() & match self.piece {
@@ -199,7 +204,7 @@ pub struct PromotionsAndCaptures<'a> {
     forward: i8,
     ep_mask: Bitboard,
 
-    under_promotions: VecDeque<Move<'a>>,
+    under_promotions: VecDeque<Move<&'a Position>>,
 
     state: PromAndCaptState,
     victim: Piece,
@@ -221,7 +226,7 @@ enum PromAndCaptState {
 }
 
 impl<'a> PromotionsAndCaptures<'a> {
-    pub (super) fn new(pos: &'a Position) -> PromotionsAndCaptures {
+    pub (super) fn new(pos: &'a Position) -> Self {
         let forward = if pos.turn() == White { 1 } else { -1 };
         let mask = Bitboard::from(Rank::R1) | Rank::R8.into();
         let targets = mask & pos.occupied_by_piece(!pos.turn(), Queen);
@@ -252,7 +257,7 @@ impl<'a> PromotionsAndCaptures<'a> {
 }
 
 impl<'a> Iterator for PromotionsAndCaptures<'a> {
-    type Item = Move<'a>;
+    type Item = Move<&'a Position>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use PromAndCaptState::*;
@@ -267,8 +272,7 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     .expect("INFALLIBLE");
                 let orig = Square::from_coord(file, rank);
 
-                let m = Move{
-                    pos: self.pos,
+                let m = DetachedMove{
                     piece: self.attacker,
                     orig,
                     capt_pc: Some(self.victim),
@@ -279,10 +283,10 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                 for prom_pc in &[ ToKnight, ToRook, ToBishop ] {
                     let mut m = m.clone();
                     m.move_type = MoveType::Promotion(*prom_pc);
-                    self.under_promotions.push_back(m);
+                    self.under_promotions.push_back(m.attach(self.pos));
                 }
 
-                return Some(m);
+                return Some(m.attach(self.pos));
             } else if self.side < 1 {
                 self.side = 1;
                 self.destinations = self.pieces.shift_xy(self.side, self.forward) & self.targets;
@@ -312,8 +316,7 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                     .expect("INFALLIBLE");
                 let orig = Square::from_coord(dest.file(), rank);
 
-                let m = Move{
-                    pos: self.pos,
+                let m = DetachedMove{
                     piece: self.attacker,
                     orig,
                     capt_pc: None,
@@ -324,10 +327,10 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                 for prom_pc in &[ ToKnight, ToRook, ToBishop ] {
                     let mut m = m.clone();
                     m.move_type = MoveType::Promotion(*prom_pc);
-                    self.under_promotions.push_back(m);
+                    self.under_promotions.push_back(m.attach(self.pos));
                 }
 
-                return Some(m);
+                return Some(m.attach(self.pos));
             } else {
                 self.state = Captures;
                 self.victim = Queen;
@@ -353,23 +356,25 @@ impl<'a> Iterator for PromotionsAndCaptures<'a> {
                         _ => MoveType::Standard,
                     };
 
-                    return Some(Move {
-                        pos: self.pos,
-                        piece: self.attacker,
-                        orig,
-                        capt_pc: Some(self.victim),
-                        dest,
-                        move_type,
-                    })
+                    return Some(
+                        DetachedMove {
+                            piece: self.attacker,
+                            orig,
+                            capt_pc: Some(self.victim),
+                            dest,
+                            move_type,
+                        }.attach(self.pos)
+                    );
                 } else {
-                    return Some(Move {
-                        pos: self.pos,
-                        piece: self.attacker,
-                        orig: self.orig,
-                        capt_pc: Some(self.victim),
-                        dest,
-                        move_type: MoveType::Standard,
-                    })
+                    return Some(
+                        DetachedMove {
+                            piece: self.attacker,
+                            orig: self.orig,
+                            capt_pc: Some(self.victim),
+                            dest,
+                            move_type: MoveType::Standard,
+                        }.attach(self.pos)
+                    );
                 }
             } else if self.attacker == Pawn && self.side < 1 {
                 // switch direction of pawn captures

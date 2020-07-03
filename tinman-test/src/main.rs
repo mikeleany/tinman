@@ -11,6 +11,7 @@
 #![warn(clippy::unimplemented, clippy::todo)]
 #![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
 
+use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::fs::{read_to_string, write, create_dir, read_dir, File, OpenOptions};
 use std::io::Write;
@@ -22,10 +23,11 @@ use log::error;
 use simplelog::{WriteLogger, LevelFilter, Config};
 use rand::seq::SliceRandom;
 use chrono::Local;
-use tinman::protocol::xboard::XboardClient;
-use tinman::client::GameSetup;
-use tinman::chess::game::{MoveSequence, TimeControl};
-use tinman::pgn::read_pgn_games;
+use protocols::xboard::XboardClient;
+use protocols::client::GameSetup;
+use chess::Position;
+use chess::game::{MoveSequence, TimeControl};
+use tinman_test::pgn::read_pgn_games;
 
 fn main() -> Result<(), Error> {
     let matches =
@@ -181,7 +183,7 @@ fn main() -> Result<(), Error> {
             let mut openings = read_opening_file(&paths.opening_file)?;
             for file in matches.values_of("files").expect("INFALLIBLE") {
                 for opening in read_pgn_openings(&PathBuf::from(file))? {
-                    let opening = opening.parse::<MoveSequence>()?;
+                    let opening = opening.parse::<MoveSequence<Rc<Position>>>()?;
                     let final_pos = opening.final_position().to_string();
                     match openings.entry(final_pos) {
                         Entry::Vacant(entry) => {
@@ -297,7 +299,7 @@ fn run(matches: &ArgMatches, paths: &Paths) -> Result<(), Error> {
 
     for game in all_games {
         let (eng_name, opp_name, opening) = &game;
-        game_setup.opening(openings[opening].parse::<MoveSequence>()?);
+        game_setup.opening(openings[opening].parse::<MoveSequence<Rc<Position>>>()?);
 
         // open engine's pgn file
         let pgn_file = paths.games_dir.join(eng_name.to_owned() + ".pgn");
@@ -462,14 +464,14 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<tinman::chess::Error> for Error {
-    fn from(err: tinman::chess::Error) -> Self {
+impl From<chess::Error> for Error {
+    fn from(err: chess::Error) -> Self {
         Error(err.to_string())
     }
 }
 
-impl From<tinman::pgn::PgnParseError> for Error {
-    fn from(err: tinman::pgn::PgnParseError) -> Self {
+impl From<tinman_test::pgn::PgnParseError> for Error {
+    fn from(err: tinman_test::pgn::PgnParseError) -> Self {
         Error(err.to_string())
     }
 }

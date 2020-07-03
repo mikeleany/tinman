@@ -7,11 +7,12 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+use std::ops::Deref;
 use std::num::NonZeroU16;
 use std::convert::TryFrom;
 use std::mem::size_of;
-use crate::chess::{Square, Promotion, Move, ValidMove, MoveBuilder, Position, Zobrist};
-use crate::chess::Result;
+use chess::{Square, Promotion, Move, MoveBuilder, Position, Zobrist};
+use chess::Result;
 use crate::engine::Score;
 
 
@@ -40,7 +41,7 @@ impl HashMove {
         }
     }
 
-    pub fn validate<'a>(self, pos: &'a Position) -> Result<Move<'a>> {
+    pub fn validate<P: Deref<Target = Position>>(self, pos: P) -> Result<Move<P>> {
         MoveBuilder::new()
             .origin(self.origin())
             .destination(self.destination())
@@ -49,8 +50,8 @@ impl HashMove {
     }
 }
 
-impl<T: ValidMove> From<T> for HashMove {
-    fn from(mv: T) -> HashMove {
+impl<P: Deref<Target = Position>> From<Move<P>> for HashMove {
+    fn from(mv: Move<P>) -> HashMove {
         HashMove(NonZeroU16::new(
             ((mv.origin() as u16) << 9)
             + ((mv.destination() as u16) << 3)

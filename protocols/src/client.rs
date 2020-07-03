@@ -7,11 +7,11 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Instant;
 use std::fmt;
 use std::sync::mpsc;
-use crate::chess;
+use chess::Position;
 use chess::game::{Game, TimeControl, MoveSequence, GameResult, WinReason};
 use log::warn;
 
@@ -21,7 +21,7 @@ use log::warn;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineResponse {
     /// The engine plays the given move.
-    Move(chess::ArcMove),
+    Move(chess::Move<Rc<chess::Position>>),
     /// The engine resigns. No move is played.
     Resignation,
 }
@@ -99,14 +99,14 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn new_game(&mut self, game: &Game) -> Result<(), EngineError>;
+    fn new_game(&mut self, game: &Game<Rc<Position>>) -> Result<(), EngineError>;
 
     /// The engine should update it's board to include any moves in `game` that it has not already
     /// seen. The caller must guarantee that no previous moves have been undone.
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn send_moves(&mut self, game: &Game) -> Result<(), EngineError>;
+    fn send_moves(&mut self, game: &Game<Rc<Position>>) -> Result<(), EngineError>;
 
     /// The engine should give a response within the available time for the player on move. The
     /// caller must guarantee that all moves in `game` have already been seen by the engine and that
@@ -114,7 +114,7 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn go(&mut self, game: &Game) -> Result<EngineResponse, EngineError>;
+    fn go(&mut self, game: &Game<Rc<Position>>) -> Result<EngineResponse, EngineError>;
 
     /// The engine should make the last move in `game` and give a response within the available time
     /// for the player next player. The caller must guarantee the last, and only the last move has
@@ -122,7 +122,8 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn send_move_and_go(&mut self, game: &Game) -> Result<EngineResponse, EngineError>;
+    fn send_move_and_go(&mut self, game: &Game<Rc<Position>>)
+    -> Result<EngineResponse, EngineError>;
 
     /// Sends the result of the game to the engine. The caller must guarantee that all moves have
     /// already been seen by the engine, that no moves have been undone, and that the game has a
@@ -130,7 +131,7 @@ pub trait EngineInterface {
     ///
     /// # Panics
     /// The implementation may panic if the guarantees are not met.
-    fn result(&mut self, game: &Game) -> Result<(), EngineError>;
+    fn result(&mut self, game: &Game<Rc<Position>>) -> Result<(), EngineError>;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -138,7 +139,7 @@ pub trait EngineInterface {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GameSetup<> {
     tc: TimeControl,
-    opening: MoveSequence,
+    opening: MoveSequence<Rc<Position>>,
 }
 
 impl GameSetup {
@@ -159,13 +160,13 @@ impl GameSetup {
 
     /// Sets the initial position for the game.
     pub fn initial_pos(&mut self, pos: chess::Position) -> &Self {
-        self.opening = MoveSequence::starting_at(Arc::new(pos));
+        self.opening = MoveSequence::starting_at(Rc::new(pos));
 
         self
     }
 
     /// Sets the intial position and opening moves for the game.
-    pub fn opening(&mut self, moves: MoveSequence) -> &Self {
+    pub fn opening(&mut self, moves: MoveSequence<Rc<Position>>) -> &Self {
         self.opening = moves;
 
         self
@@ -175,8 +176,8 @@ impl GameSetup {
     pub fn play_game(&self,
         mut white: Box<dyn EngineInterface>,
         mut black: Box<dyn EngineInterface>)
-    -> (Game, Result<(), EngineError>) {
-        let mut game = Game::starting_at(self.opening.initial_position().as_ref().to_owned());
+    -> (Game<Rc<Position>>, Result<(), EngineError>) {
+        let mut game = Game::starting_at(self.opening.initial_position().to_owned());
         game.set_time_control(self.tc);
         for mv in self.opening.iter() {
             game.make_move(mv.to_owned()).expect("INFALLIBLE");

@@ -9,15 +9,14 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 use std::cmp::max;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::rc::Rc;
+use std::time::Instant;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
-use crate::chess;
-use chess::{Position, ValidMove, Move, Piece};
+use chess::{Position, Move, Piece};
 use chess::game::{MoveSequence, TimeControl};
-use crate::protocol::{Protocol, Action, SearchAction};
+use protocols::{Protocol, Action, SearchAction, Thinking};
 
 mod eval;
 use eval::{evaluate, piece_val};
@@ -25,69 +24,6 @@ pub use eval::Score;
 
 mod hash;
 use hash::{HashTable, HashEntry, Bound};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Thinking output
-#[derive(Debug, Clone)]
-pub struct Thinking {
-    score: Score,
-    depth: u8,
-    time: Duration,
-    nodes: u64,
-    pv: MoveSequence,
-}
-
-impl Thinking {
-    fn new(pos: Arc<Position>) -> Self {
-        Thinking {
-            score: -Score::infinity(),
-            depth: 0,
-            time: Duration::from_secs(0),
-            nodes: 1,
-            pv: MoveSequence::starting_at(pos),
-        }
-    }
-
-    /// Returns the estimated score for the principle variation.
-    pub fn score(&self) -> Score {
-        self.score
-    }
-
-    /// Returns the search depth that was reached.
-    pub fn depth(&self) -> usize {
-        self.depth as usize
-    }
-
-    /// Returns the amount of time used for the search.
-    pub fn time(&self) -> Duration {
-        self.time
-    }
-
-    /// Returns the number of nodes searched.
-    pub fn nodes(&self) -> u64 {
-        self.nodes
-    }
-
-    /// Returns the average number of nodes searched per second.
-    pub fn nps(&self) -> u64 {
-        self.nodes/self.time.as_secs()
-    }
-
-    /// Returns the principle variation.
-    pub fn pv(&self) -> &MoveSequence {
-        &self.pv
-    }
-
-    /// Returns the best move found in the search.
-    pub fn best_move(&self) -> Option<&chess::ArcMove> {
-        self.pv.first()
-    }
-
-    /// Returns the best move to ponder on.
-    pub fn ponder_move(&self) -> Option<&chess::ArcMove> {
-        self.pv.get(1)
-    }
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// The engine
@@ -103,7 +39,7 @@ pub struct Engine<T> where T: Protocol {
     nodes: u64,
     search_count: u16,
 
-    history: MoveSequence,
+    history: MoveSequence<Rc<Position>>,
     color: chess::Color,
 }
 
@@ -226,8 +162,9 @@ impl<T> Engine<T> where T: Protocol {
 
     /// Search the current or ponder position for the best move, returning the thinking ouptput.
     fn search_root(&mut self) -> Option<Thinking> {
-        let mut thinking = Thinking::new(Arc::clone(self.history.final_position()));
-        let mut move_list: VecDeque<MoveSequence> = VecDeque::new();
+        let mut thinking = Thinking::new();
+        thinking.set_nodes(1);
+        let mut move_list: VecDeque<MoveSequence<Rc<Position>>> = VecDeque::new();
         self.search_count += 1;
         self.nodes = 1;
 
@@ -286,41 +223,43 @@ impl<T> Engine<T> where T: Protocol {
                     if val > best_val {
                         best_val = val;
                         best_move = n;
-                        thinking.score = best_val;
-                        thinking.depth = depth;
-                        thinking.pv = seq.clone();
+                        let mut pv = seq.clone();
                         if let Some(mut child_pv) = child_pv {
-                            thinking.pv.append(&mut child_pv).expect("INFALLIBLE");
+                            pv.append(&mut child_pv).expect("INFALLIBLE");
                         }
+                        thinking.set_pv(pv, best_val.into());
+                        thinking.set_depth(depth);
                     }
                 } else if self.abort {
                     return None;
                 } else {
-                    thinking.depth = depth;
-                    thinking.time = self.start_time.elapsed();
-                    thinking.nodes = self.nodes;
+                    thinking.set_depth(depth);
+                    thinking.set_time(self.start_time.elapsed());
+                    thinking.set_nodes(self.nodes);
                     return Some(thinking);
                 }
             }
 
-            for (i, mv) in thinking.pv.iter().enumerate() {
-                let depth = thinking.depth - i as u8;
-                let hash_entry = HashEntry::new(
-                    mv.position().zobrist_key(),
-                    self.search_count, depth,
-                    Bound::Exact, thinking.score,
-                    mv.clone().into());
-                self.hash.insert(hash_entry, i);
+            if let Some(pv) = thinking.pv() {
+                for (i, mv) in pv.iter().enumerate() {
+                    let depth = (thinking.depth() - i) as u8;
+                    let hash_entry = HashEntry::new(
+                        mv.position().zobrist_key(),
+                        self.search_count, depth,
+                        Bound::Exact, thinking.score().into(),
+                        mv.clone().into());
+                    self.hash.insert(hash_entry, i);
+                }
             }
 
-            thinking.depth = depth;
-            thinking.time = self.start_time.elapsed();
-            thinking.nodes = self.nodes;
+            thinking.set_depth(depth);
+            thinking.set_time(self.start_time.elapsed());
+            thinking.set_nodes(self.nodes);
             self.protocol.send_thinking(&thinking);
         }
 
-        thinking.time = self.start_time.elapsed();
-        thinking.nodes = self.nodes;
+        thinking.set_time(self.start_time.elapsed());
+        thinking.set_nodes(self.nodes);
 
         Some(thinking)
     }
@@ -332,8 +271,8 @@ impl<T> Engine<T> where T: Protocol {
         ply: usize, mut depth: u8,
         mut alpha: Score, beta: Score,
         null_move_allowed: bool)
-    -> Option<(Score, Option<MoveSequence>)> {
-        let pos = Arc::clone(self.history.final_position());
+    -> Option<(Score, Option<MoveSequence<Rc<Position>>>)> {
+        let pos = Rc::clone(self.history.final_position());
         let mut pv = None;
 
         if self.time_to_stop() {
@@ -359,8 +298,8 @@ impl<T> Engine<T> where T: Protocol {
                 } else if hash.bound() == Bound::Exact && ply > 1 {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
-                        if let Ok(mv) = mv.validate(&pos) {
-                            pv = Some(chess::ArcMove::from(mv).try_into().expect("INFALLIBLE"));
+                        if let Ok(mv) = mv.validate(pos.into()) {
+                            pv = Some(mv.try_into().expect("INFALLIBLE"));
                         }
                     }
 
@@ -368,7 +307,7 @@ impl<T> Engine<T> where T: Protocol {
                 }
             }
 
-            hash_move = hash.best_move().map(|mv| mv.validate(&pos).ok()).flatten();
+            hash_move = hash.best_move().map(|mv| mv.validate(Rc::clone(&pos)).ok()).flatten();
         } else {
             hash_move = None;
         }
@@ -387,10 +326,11 @@ impl<T> Engine<T> where T: Protocol {
         && (depth < 4 || evaluate(&pos) >= beta)
         && !(pos.occupied_by(pos.turn()) & !pos.occupied_by_piece(pos.turn(), Piece::Pawn)
         & !pos.occupied_by_piece(pos.turn(), Piece::King)).is_empty() {
-            let mv = Move::null_move(&pos);
-            if self.history.push(mv.into()).is_ok() {
+            let mv = Move::<Rc<Position>>::null_move(Rc::clone(&pos));
+            if self.history.push(mv).is_ok() {
                 const R: u8 = 2;
-                let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R), -beta, -beta+1, false)?;
+                let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R),
+                    -beta, -beta+1, false)?;
                 self.history.pop();
 
                 if -val >= beta {
@@ -401,8 +341,8 @@ impl<T> Engine<T> where T: Protocol {
 
         // search each move
         let mut best_val = -Score::infinity();
-        for mv in hash_move.into_iter().chain(pos.moves()) {
-            if self.history.push(mv.into()).is_ok() {
+        for mv in hash_move.into_iter().chain(pos.moves().map(|m| m.into())) {
+            if self.history.push(mv).is_ok() {
                 let (val, child_pv) = if pv.is_none() {
                     self.search(ply+1, depth-1, -beta, -alpha, true)?
                 } else {
@@ -431,7 +371,8 @@ impl<T> Engine<T> where T: Protocol {
                 best_val = max(best_val, val);
                 if best_val > alpha {
                     alpha = best_val;
-                    let mut new_pv: MoveSequence = mv.try_into().expect("INFALLIBLE");
+                    let mut new_pv: MoveSequence<Rc<Position>>
+                        = mv.try_into().expect("INFALLIBLE");
                     if let Some(mut child_pv) = child_pv {
                         new_pv.append(&mut child_pv).expect("INFALLIBLE");
                     }
