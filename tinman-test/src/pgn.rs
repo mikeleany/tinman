@@ -11,7 +11,7 @@ use std::fmt;
 use std::io;
 use std::io::{Read, BufRead, BufReader};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::rc::Rc;
 use chess::Position;
 use chess::game::{Game, MoveSequence, GameResult};
 
@@ -110,7 +110,7 @@ impl PgnParser {
     }
 
     /// Parses and returns the moves of the game.
-    pub fn parse_moves(&self) -> chess::Result<MoveSequence<Arc<Position>>> {
+    pub fn parse_moves(&self) -> chess::Result<MoveSequence<Rc<Position>>> {
         self.move_text.parse()
     }
 
@@ -120,7 +120,7 @@ impl PgnParser {
     }
 
     /// Parses the PGN game and returns it in a `Game` structure.
-    pub fn parse_game(&self) -> Result<Game<Arc<Position>>, PgnParseError> {
+    pub fn parse_game(&self) -> Result<Game<Rc<Position>>, PgnParseError> {
         todo!()
     }
 }

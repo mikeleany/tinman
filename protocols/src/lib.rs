@@ -11,7 +11,7 @@
 #![warn(clippy::unimplemented, clippy::todo)]
 #![warn(clippy::option_unwrap_used, clippy::result_unwrap_used)]
 
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Duration;
 use chess::game::Game;
 use chess::{Move, Position};
@@ -48,7 +48,7 @@ pub struct Thinking {
     depth: u8,
     time: Duration,
     nodes: u64,
-    pv: Option<MoveSequence<Arc<Position>>>,
+    pv: Option<MoveSequence<Rc<Position>>>,
 }
 
 impl Thinking {
@@ -65,7 +65,7 @@ impl Thinking {
     }
 
     /// Set the principle variation, score and depth.
-    pub fn set_pv(&mut self, pv: MoveSequence<Arc<Position>>, score: Score) {
+    pub fn set_pv(&mut self, pv: MoveSequence<Rc<Position>>, score: Score) {
         self.score = score;
         self.pv = Some(pv);
     }
@@ -111,17 +111,17 @@ impl Thinking {
     }
 
     /// Returns the principle variation.
-    pub fn pv(&self) -> Option<&MoveSequence<Arc<Position>>> {
+    pub fn pv(&self) -> Option<&MoveSequence<Rc<Position>>> {
         self.pv.as_ref()
     }
 
     /// Returns the best move found in the search.
-    pub fn best_move(&self) -> Option<&Move<Arc<Position>>> {
+    pub fn best_move(&self) -> Option<&Move<Rc<Position>>> {
         self.pv.as_ref()?.first()
     }
 
     /// Returns the best move to ponder on.
-    pub fn ponder_move(&self) -> Option<&Move<Arc<Position>>> {
+    pub fn ponder_move(&self) -> Option<&Move<Rc<Position>>> {
         self.pv.as_ref()?.get(1)
     }
 }
@@ -185,10 +185,10 @@ pub trait Protocol {
     fn check_input(&mut self) -> Option<SearchAction> where Self: Sized;
 
     /// Returns the current state of the game.
-    fn game(&self) -> &Game<Arc<Position>>;
+    fn game(&self) -> &Game<Rc<Position>>;
 
     /// Returns the current ponder move, if any.
-    fn ponder_move(&self) -> Option<&Move<Arc<Position>>>;
+    fn ponder_move(&self) -> Option<&Move<Rc<Position>>>;
 
     /// Returns the maximum search depth (if any)
     fn max_depth(&self) -> Option<usize>;
