@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 use chess::game::Game;
-use chess::ArcMove;
+use chess::MoveRc;
 use chess::game::MoveSequence;
 
 pub mod client;
@@ -115,12 +115,12 @@ impl Thinking {
     }
 
     /// Returns the best move found in the search.
-    pub fn best_move(&self) -> Option<&chess::ArcMove> {
+    pub fn best_move(&self) -> Option<&chess::MoveRc> {
         self.pv.as_ref()?.first()
     }
 
     /// Returns the best move to ponder on.
-    pub fn ponder_move(&self) -> Option<&chess::ArcMove> {
+    pub fn ponder_move(&self) -> Option<&chess::MoveRc> {
         self.pv.as_ref()?.get(1)
     }
 }
@@ -187,7 +187,7 @@ pub trait Protocol {
     fn game(&self) -> &Game;
 
     /// Returns the current ponder move, if any.
-    fn ponder_move(&self) -> Option<&ArcMove>;
+    fn ponder_move(&self) -> Option<&MoveRc>;
 
     /// Returns the maximum search depth (if any)
     fn max_depth(&self) -> Option<usize>;

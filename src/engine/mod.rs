@@ -9,12 +9,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 use std::cmp::max;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Instant;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
-use chess::{Position, ValidMove, Move, Piece};
+use chess::{Position, ValidMove, Move, MoveRc, Piece};
 use chess::game::{MoveSequence, TimeControl};
 use protocols::{Protocol, Action, SearchAction, Thinking};
 
@@ -272,7 +272,7 @@ impl<T> Engine<T> where T: Protocol {
         mut alpha: Score, beta: Score,
         null_move_allowed: bool)
     -> Option<(Score, Option<MoveSequence>)> {
-        let pos = Arc::clone(self.history.final_position());
+        let pos = Rc::clone(self.history.final_position());
         let mut pv = None;
 
         if self.time_to_stop() {
@@ -299,7 +299,7 @@ impl<T> Engine<T> where T: Protocol {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
                         if let Ok(mv) = mv.validate(&pos) {
-                            pv = Some(chess::ArcMove::from(mv).try_into().expect("INFALLIBLE"));
+                            pv = Some(MoveRc::from(mv).try_into().expect("INFALLIBLE"));
                         }
                     }
 

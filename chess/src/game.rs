@@ -11,7 +11,7 @@ use std::slice::SliceIndex;
 use std::ops::Index;
 use std::iter::FusedIterator;
 use std::iter::FromIterator;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Duration;
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -21,8 +21,8 @@ use super::*;
 /// A structure to represent a sequence of moves and resulting positions
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MoveSequence {
-    moves: Vec<ArcMove>,        // TODO: make this Vec<DetachedMove>
-    final_pos: Arc<Position>,   // TODO: make this positions: Vec<Position>
+    moves: Vec<MoveRc>,
+    final_pos: Rc<Position>,
 }
 
 impl MoveSequence {
@@ -30,12 +30,12 @@ impl MoveSequence {
     pub fn new() -> MoveSequence {
         MoveSequence {
             moves: Vec::new(),
-            final_pos: Arc::new(Position::new()),
+            final_pos: Position::new().into(),
         }
     }
 
     /// Constructs an empty `MoveSequence` starting at the given initial position.
-    pub fn starting_at(initial_pos: Arc<Position>) -> MoveSequence {
+    pub fn starting_at(initial_pos: Rc<Position>) -> MoveSequence {
         MoveSequence {
             moves: Vec::new(),
             final_pos: initial_pos,
@@ -47,13 +47,13 @@ impl MoveSequence {
     /// If `len` is greater than the move sequence's current length, this has no effect.
     pub fn truncate(&mut self, len: usize) {
         if len < self.len() {
-            self.final_pos = self.moves[len].position_arc().clone();
+            self.final_pos = self.moves[len].position().clone();
             self.moves.truncate(len);
         }
     }
 
     /// Extracts a slice containing the entire move sequence.
-    pub fn as_slice(&self) -> &[ArcMove] {
+    pub fn as_slice(&self) -> &[MoveRc] {
         self.moves.as_slice()
     }
 
@@ -62,10 +62,10 @@ impl MoveSequence {
     /// # Errors
     ///
     /// Returns an error if `mv.position()` is not the same as `self.final_position()` or if
-    /// `mv.make_arc()` returns and error.
-    pub fn push(&mut self, mv: ArcMove) -> Result<&Arc<Position>> {
-        if mv.position() == self.final_pos.as_ref() {
-            self.final_pos = mv.make_arc()?;
+    /// `mv.make()` returns and error.
+    pub fn push(&mut self, mv: MoveRc) -> Result<&Rc<Position>> {
+        if mv.position().as_ref() == self.final_pos.as_ref() {
+            self.final_pos = mv.make()?;
             self.moves.push(mv);
 
             Ok(&self.final_pos)
@@ -75,9 +75,9 @@ impl MoveSequence {
     }
 
     /// Removes the last move from the move sequence and returns it, or `None` if it is empty.
-    pub fn pop(&mut self) -> Option<ArcMove> {
+    pub fn pop(&mut self) -> Option<MoveRc> {
         if let Some(mv) = self.moves.pop() {
-            self.final_pos = mv.position_arc().clone();
+            self.final_pos = mv.position().clone();
 
             Some(mv)
         } else {
@@ -90,7 +90,7 @@ impl MoveSequence {
     /// # Errors
     ///
     /// Returns an error if `other.initial_position()` is not the same as `self.final_position()`.
-    pub fn append(&mut self, other: &mut MoveSequence) -> Result<&Arc<Position>> {
+    pub fn append(&mut self, other: &mut MoveSequence) -> Result<&Rc<Position>> {
         if other.initial_position().as_ref() == self.final_pos.as_ref() {
             self.moves.append(&mut other.moves);
             self.final_pos = other.final_position().clone();
@@ -104,7 +104,7 @@ impl MoveSequence {
     /// Removes all moves from the move sequence, leaving only the initial position.
     pub fn clear(&mut self) {
         if !self.is_empty() {
-            self.final_pos = self.moves[0].position_arc().clone();
+            self.final_pos = self.moves[0].position().clone();
             self.moves.clear();
         }
     }
@@ -120,26 +120,26 @@ impl MoveSequence {
     }
 
     /// Returns the first move in the sequence.
-    pub fn first(&self) -> Option<&ArcMove> {
+    pub fn first(&self) -> Option<&MoveRc> {
         self.moves.first()
     }
 
     /// Returns the last move in the sequence.
-    pub fn last(&self) -> Option<&ArcMove> {
+    pub fn last(&self) -> Option<&MoveRc> {
         self.moves.last()
     }
 
     /// Returns the initial position of the move sequence.
-    pub fn initial_position(&self) -> &Arc<Position> {
+    pub fn initial_position(&self) -> &Rc<Position> {
         if !self.is_empty() {
-            self.moves[0].position_arc()
+            self.moves[0].position()
         } else {
             &self.final_pos
         }
     }
 
     /// Returns the final position of the move sequence.
-    pub fn final_position(&self) -> &Arc<Position> {
+    pub fn final_position(&self) -> &Rc<Position> {
         &self.final_pos
     }
 
@@ -149,8 +149,8 @@ impl MoveSequence {
     ///   bounds
     /// - If given a range, returns the subslice corresponding to that range, or `None` if out of
     ///   bounds.
-    pub fn get<I>(&self, index: I) -> Option<&<I as SliceIndex<[ArcMove]>>::Output>
-        where I: SliceIndex<[ArcMove]> {
+    pub fn get<I>(&self, index: I) -> Option<&<I as SliceIndex<[MoveRc]>>::Output>
+        where I: SliceIndex<[MoveRc]> {
         self.moves.get(index)
     }
 
@@ -158,11 +158,11 @@ impl MoveSequence {
     ///
     /// Note that an index of `self.len()` is in bounds and will return the final position, which
     /// is the result of the last move.
-    pub fn position(&self, index: usize) -> Option<&Arc<Position>> {
+    pub fn position(&self, index: usize) -> Option<&Rc<Position>> {
         use std::cmp::Ordering;
 
         match index.cmp(&self.len()) {
-            Ordering::Less => Some(&self.moves[index].position_arc()),
+            Ordering::Less => Some(&self.moves[index].position()),
             Ordering::Equal => Some(&self.final_pos),
             Ordering::Greater => None,
         }
@@ -220,7 +220,7 @@ impl MoveSequence {
 }
 
 impl IntoIterator for MoveSequence {
-    type Item = ArcMove;
+    type Item = MoveRc;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -228,11 +228,11 @@ impl IntoIterator for MoveSequence {
     }
 }
 
-impl TryFrom<ArcMove> for MoveSequence {
+impl TryFrom<MoveRc> for MoveSequence {
     type Error = Error;
 
-    fn try_from(mv: ArcMove) -> Result<Self> {
-        let final_pos = Arc::new(mv.make()?);
+    fn try_from(mv: MoveRc) -> Result<Self> {
+        let final_pos = mv.make()?.into();
 
         Ok(MoveSequence {
             moves: vec![ mv ],
@@ -241,8 +241,8 @@ impl TryFrom<ArcMove> for MoveSequence {
     }
 }
 
-impl FromIterator<ArcMove> for Result<MoveSequence> {
-    fn from_iter<I: IntoIterator<Item=ArcMove>>(iter: I) -> Self {
+impl FromIterator<MoveRc> for Result<MoveSequence> {
+    fn from_iter<I: IntoIterator<Item=MoveRc>>(iter: I) -> Self {
         let mut iter = iter.into_iter();
 
         let mut seq = if let Some(mv) = iter.next() {
@@ -259,7 +259,7 @@ impl FromIterator<ArcMove> for Result<MoveSequence> {
     }
 }
 
-impl<I> Index<I> for MoveSequence where I: SliceIndex<[ArcMove]> {
+impl<I> Index<I> for MoveSequence where I: SliceIndex<[MoveRc]> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -312,7 +312,7 @@ impl FromStr for MoveSequence {
                 continue;
             }
 
-            let pos = Arc::clone(seq.final_position());
+            let pos = Rc::clone(seq.final_position());
             let mv = mv.parse::<MoveBuilder>()?.validate(&pos)?;
             seq.push(mv.into())?;
         }
@@ -323,7 +323,7 @@ impl FromStr for MoveSequence {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Iterator over the moves in a MoveSequence
-pub type Iter<'a>=std::slice::Iter<'a, ArcMove>;
+pub type Iter<'a>=std::slice::Iter<'a, MoveRc>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An iterator over the positions in the move sequence, from the intial position up to and
@@ -331,15 +331,15 @@ pub type Iter<'a>=std::slice::Iter<'a, ArcMove>;
 #[derive(Debug, Clone)]
 pub struct Positions<'a> {
     moves: Iter<'a>,
-    final_pos: Option<&'a Arc<Position>>,
+    final_pos: Option<&'a Rc<Position>>,
 }
 
 impl<'a> Iterator for Positions<'a> {
-    type Item = &'a Arc<Position>;
+    type Item = &'a Rc<Position>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(mv) = self.moves.next() {
-            Some(mv.position_arc())
+            Some(mv.position())
         } else if let Some(pos) = self.final_pos {
             self.final_pos = None;
 
@@ -367,7 +367,7 @@ impl DoubleEndedIterator for Positions<'_> {
 
             Some(pos)
         } else if let Some(mv) = self.moves.next() {
-            Some(mv.position_arc())
+            Some(mv.position())
         } else {
             None
         }
@@ -572,7 +572,7 @@ impl Game {
     /// Creates a new game using `pos` as the starting position
     pub fn starting_at(pos: Position) -> Self {
         Game {
-            moves: MoveSequence::starting_at(Arc::new(pos)),
+            moves: MoveSequence::starting_at(pos.into()),
             ..Default::default()
         }
     }
@@ -590,7 +590,7 @@ impl Game {
     }
 
     /// Returns a reference counted pointer to the current position
-    pub fn position(&self) -> &Arc<Position> {
+    pub fn position(&self) -> &Rc<Position> {
         self.moves.final_position()
     }
 
@@ -620,7 +620,7 @@ impl Game {
     }
 
     /// Make the given move
-    pub fn make_move(&mut self, mv: ArcMove) -> Result<&mut Self> {
+    pub fn make_move(&mut self, mv: MoveRc) -> Result<&mut Self> {
         self.moves.push(mv)?;
 
         self.check_game_result();
@@ -630,7 +630,7 @@ impl Game {
 
     /// Make the given move and (if successful) update the clock based on `elapsed` time and the
     /// game's time control.
-    pub fn make_move_timed(&mut self, mv: ArcMove, elapsed: Duration) -> Result<&mut Self> {
+    pub fn make_move_timed(&mut self, mv: MoveRc, elapsed: Duration) -> Result<&mut Self> {
         let color = mv.color();
 
         self.make_move(mv)?;
@@ -641,7 +641,7 @@ impl Game {
 
     /// Make the given move
     pub fn make_move_from_str(&mut self, mv: &str) -> Result<&mut Self> {
-        let mv: ArcMove = MoveBuilder::from_str(mv)?
+        let mv: MoveRc = MoveBuilder::from_str(mv)?
             .validate(self.position())?
             .into();
 
@@ -651,7 +651,7 @@ impl Game {
     /// Make the given move and (if successful) update the clock based on `elapsed` time and the
     /// game's time control.
     pub fn make_move_from_str_timed(&mut self, mv: &str, elapsed: Duration) -> Result<&mut Self> {
-        let mv: ArcMove = MoveBuilder::from_str(mv)?
+        let mv: MoveRc = MoveBuilder::from_str(mv)?
             .validate(self.position())?
             .into();
 

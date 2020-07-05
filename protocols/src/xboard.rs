@@ -27,7 +27,7 @@ use crate::client::{EngineInterface, EngineResponse, EngineError};
 enum State {
     Idle,
     Thinking,
-    Pondering(chess::ArcMove),
+    Pondering(chess::MoveRc),
     Quitting,
 }
 
@@ -469,7 +469,7 @@ impl Protocol for Xboard {
         &self.game
     }
 
-    fn ponder_move(&self) -> Option<&chess::ArcMove> {
+    fn ponder_move(&self) -> Option<&chess::MoveRc> {
         if let State::Pondering(mv) = &self.state {
             Some(&mv)
         } else {
@@ -684,7 +684,7 @@ impl XboardClient {
     }
 
     /// Send a move to the engine.
-    fn send_move(&mut self, mv: &chess::ArcMove) -> std::io::Result<()> {
+    fn send_move(&mut self, mv: &chess::MoveRc) -> std::io::Result<()> {
         self.move_count += 1;
 
         let move_string = if self.san {

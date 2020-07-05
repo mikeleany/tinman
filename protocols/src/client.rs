@@ -7,7 +7,6 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::sync::Arc;
 use std::time::Instant;
 use std::fmt;
 use std::sync::mpsc;
@@ -20,7 +19,7 @@ use log::warn;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineResponse {
     /// The engine plays the given move.
-    Move(chess::ArcMove),
+    Move(chess::MoveRc),
     /// The engine resigns. No move is played.
     Resignation,
 }
@@ -158,7 +157,7 @@ impl GameSetup {
 
     /// Sets the initial position for the game.
     pub fn initial_pos(&mut self, pos: chess::Position) -> &Self {
-        self.opening = MoveSequence::starting_at(Arc::new(pos));
+        self.opening = MoveSequence::starting_at(pos.into());
 
         self
     }

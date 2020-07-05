@@ -7,7 +7,7 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::sync::Arc;
+use std::rc::Rc;
 use super::*;
 use bitboard::*;
 use Piece::*;
@@ -265,12 +265,12 @@ impl<'a> fmt::Display for Move<'a> {
 /// A valid (pseudo-legal) move from a specific position, with no lifetime restrictions. 
 ///
 /// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `ArcMove::make()` to verify full legality.
+/// involve castling through check. Use `MoveRc::make()` to verify full legality.
 ///
 /// See the [ValidMove](trait.ValidMove.html) trait for a list of methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArcMove {
-    pos: Arc<Position>,
+pub struct MoveRc {
+    pos: Rc<Position>,
     piece: Piece,
     orig: Square,
     dest: Square,
@@ -278,19 +278,19 @@ pub struct ArcMove {
     move_type: MoveType,
 }
 
-impl ArcMove {
-    /// Returns the position from which this move is valid as an `Arc<Position>`.
-    pub fn position_arc(&self) -> &Arc<Position> {
+impl MoveRc {
+    /// Returns the position from which this move is valid as an `Rc<Position>`.
+    pub fn position(&self) -> &Rc<Position> {
         &self.pos
     }
 
-    /// Make the move, returning the resulting position as an `Arc<Position>`.
-    pub fn make_arc(&self) -> Result<Arc<Position>> {
-        Ok(Arc::new(self.make()?))
+    /// Make the move, returning the resulting position as an `Rc<Position>`.
+    pub fn make(&self) -> Result<Rc<Position>> {
+        Ok(Position::make_move(self)?.into())
     }
 }
 
-impl ValidMove for ArcMove {
+impl ValidMove for MoveRc {
     fn position(&self) -> &Position {
         &self.pos
     }
@@ -311,10 +311,10 @@ impl ValidMove for ArcMove {
     }
 }
 
-impl From<Move<'_>> for ArcMove {
-    fn from(mv: Move<'_>) -> ArcMove {
-        ArcMove {
-            pos: Arc::new(mv.pos.clone()),
+impl From<Move<'_>> for MoveRc {
+    fn from(mv: Move<'_>) -> Self {
+        MoveRc {
+            pos: mv.pos.clone().into(),
             piece: mv.piece,
             orig: mv.orig,
             dest: mv.dest,
@@ -324,7 +324,7 @@ impl From<Move<'_>> for ArcMove {
     }
 }
 
-impl fmt::Display for ArcMove {
+impl fmt::Display for MoveRc {
     /// The move is formatted as follows:
     ///
     /// "{}" -- Standard Algebraic Notation (eg Nf3, e8=Q, or O-O)
