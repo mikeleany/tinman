@@ -8,7 +8,6 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::sync::Arc;
 use std::fmt;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -19,7 +18,6 @@ use log::{debug, info, error};
 use lazy_static::lazy_static;
 use regex::{RegexSet, Regex};
 use super::{Protocol, Action, SearchAction, Thinking, io};
-use chess::{Move, Position};
 use chess::game::{Game, TimeControl, GameResult};
 use crate::client::{EngineInterface, EngineResponse, EngineError};
 
@@ -29,7 +27,7 @@ use crate::client::{EngineInterface, EngineResponse, EngineError};
 enum State {
     Idle,
     Thinking,
-    Pondering(Move<Arc<Position>>),
+    Pondering(chess::ArcMove),
     Quitting,
 }
 
@@ -39,7 +37,7 @@ enum State {
 pub struct Xboard {
     client: io::Client,
 
-    game: Game<Arc<Position>>,
+    game: Game,
 
     state: State,
     color: Option<chess::Color>,
@@ -139,10 +137,10 @@ impl Protocol for Xboard {
                             }
                         },
                         SetBoard(fen) => {
-                            match fen.parse::<Position>() {
+                            match fen.parse() {
                                 Ok(pos) => {
                                     let tc = self.game.clock().time_control();
-                                    self.game = Game::starting_at(pos.into());
+                                    self.game = Game::starting_at(pos);
                                     self.game.set_time_control(tc);
                                 },
                                 Err(err) => Response::ErrorMessage(line, err.to_string()).send(),
@@ -362,10 +360,10 @@ impl Protocol for Xboard {
                             }
                         },
                         SetBoard(fen) => {
-                            match fen.parse::<Position>() {
+                            match fen.parse() {
                                 Ok(pos) => {
                                     let tc = self.game.clock().time_control();
-                                    self.game = Game::starting_at(pos.into());
+                                    self.game = Game::starting_at(pos);
                                     self.game.set_time_control(tc);
                                 },
                                 Err(err) => Response::ErrorMessage(line, err.to_string()).send(),
@@ -467,11 +465,11 @@ impl Protocol for Xboard {
         None
     }
 
-    fn game(&self) -> &Game<Arc<Position>> {
+    fn game(&self) -> &Game {
         &self.game
     }
 
-    fn ponder_move(&self) -> Option<&Move<Arc<Position>>> {
+    fn ponder_move(&self) -> Option<&chess::ArcMove> {
         if let State::Pondering(mv) = &self.state {
             Some(&mv)
         } else {
@@ -686,7 +684,7 @@ impl XboardClient {
     }
 
     /// Send a move to the engine.
-    fn send_move(&mut self, mv: &Move<Arc<Position>>) -> std::io::Result<()> {
+    fn send_move(&mut self, mv: &chess::ArcMove) -> std::io::Result<()> {
         self.move_count += 1;
 
         let move_string = if self.san {
@@ -741,8 +739,7 @@ impl XboardClient {
         loop {
             match self.engine.recv_timeout(timeout)?.parse() {
                 Ok(Response::Move(mv)) => {
-                    let mv = mv.parse::<chess::MoveBuilder>()?
-                        .validate::<Arc<Position>>(Arc::new(pos.clone()))?;
+                    let mv = mv.parse::<chess::MoveBuilder>()?.validate(pos)?;
                     self.move_count += 1;
                     return Ok(EngineResponse::Move(mv.into()));
                 },
@@ -775,7 +772,7 @@ impl Drop for XboardClient {
 }
 
 impl EngineInterface for XboardClient {
-    fn new_game(&mut self, game: &Game<Arc<Position>>) -> Result<(), EngineError> {
+    fn new_game(&mut self, game: &Game) -> Result<(), EngineError> {
         // TODO: include all this in init() and only allow one game per engine invocation
         self.send(&Command::New)?;
         self.send(&Command::Post)?;
@@ -818,7 +815,7 @@ impl EngineInterface for XboardClient {
         Ok(())
     }
 
-    fn send_moves(&mut self, game: &Game<Arc<Position>>) -> Result<(), EngineError> {
+    fn send_moves(&mut self, game: &Game) -> Result<(), EngineError> {
         assert!(self.move_count <= game.history().len());
 
         if !self.force_mode {
@@ -835,7 +832,7 @@ impl EngineInterface for XboardClient {
         Ok(())
     }
 
-    fn go(&mut self, game: &Game<Arc<Position>>) -> Result<EngineResponse, EngineError> {
+    fn go(&mut self, game: &Game) -> Result<EngineResponse, EngineError> {
         let mover = game.position().turn();
         self.send(&Command::Time(game.clock().remaining(mover)))?;
         self.send(&Command::OppTime(game.clock().remaining(!mover)))?;
@@ -845,7 +842,7 @@ impl EngineInterface for XboardClient {
         self.wait_for_move(game.position(), game.time_remaining(mover))
     }
 
-    fn send_move_and_go(&mut self, game: &Game<Arc<Position>>) -> Result<EngineResponse, EngineError> {
+    fn send_move_and_go(&mut self, game: &Game) -> Result<EngineResponse, EngineError> {
         if self.force_mode {
             self.send_moves(game)?;
 
@@ -861,7 +858,7 @@ impl EngineInterface for XboardClient {
         }
     }
 
-    fn result(&mut self, game: &Game<Arc<Position>>) -> Result<(), EngineError> {
+    fn result(&mut self, game: &Game) -> Result<(), EngineError> {
         self.send(&game.result().expect("game result").into())?;
         self.send(&Command::Force)?;
         self.force_mode = true;

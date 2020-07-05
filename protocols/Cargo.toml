@@ -1,6 +1,6 @@
 [package]
 name = "protocols"
-version = "0.1.0-dev0-workspace"
+version = "0.1.0"
 authors = ["Mike Leany <55358344+mikeleany@users.noreply.github.com>"]
 edition = "2018"
 

@@ -14,7 +14,7 @@ use std::time::Instant;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use log::debug;
-use chess::{Position, Move, Piece};
+use chess::{Position, ValidMove, Move, Piece};
 use chess::game::{MoveSequence, TimeControl};
 use protocols::{Protocol, Action, SearchAction, Thinking};
 
@@ -39,7 +39,7 @@ pub struct Engine<T> where T: Protocol {
     nodes: u64,
     search_count: u16,
 
-    history: MoveSequence<Arc<Position>>,
+    history: MoveSequence,
     color: chess::Color,
 }
 
@@ -164,7 +164,7 @@ impl<T> Engine<T> where T: Protocol {
     fn search_root(&mut self) -> Option<Thinking> {
         let mut thinking = Thinking::new();
         thinking.set_nodes(1);
-        let mut move_list: VecDeque<MoveSequence<Arc<Position>>> = VecDeque::new();
+        let mut move_list: VecDeque<MoveSequence> = VecDeque::new();
         self.search_count += 1;
         self.nodes = 1;
 
@@ -271,7 +271,7 @@ impl<T> Engine<T> where T: Protocol {
         ply: usize, mut depth: u8,
         mut alpha: Score, beta: Score,
         null_move_allowed: bool)
-    -> Option<(Score, Option<MoveSequence<Arc<Position>>>)> {
+    -> Option<(Score, Option<MoveSequence>)> {
         let pos = Arc::clone(self.history.final_position());
         let mut pv = None;
 
@@ -298,8 +298,8 @@ impl<T> Engine<T> where T: Protocol {
                 } else if hash.bound() == Bound::Exact && ply > 1 {
                     // alpha < score < beta due to previous conditions
                     if let Some(mv) = hash.best_move() {
-                        if let Ok(mv) = mv.validate(pos.into()) {
-                            pv = Some(mv.try_into().expect("INFALLIBLE"));
+                        if let Ok(mv) = mv.validate(&pos) {
+                            pv = Some(chess::ArcMove::from(mv).try_into().expect("INFALLIBLE"));
                         }
                     }
 
@@ -307,7 +307,7 @@ impl<T> Engine<T> where T: Protocol {
                 }
             }
 
-            hash_move = hash.best_move().map(|mv| mv.validate(Arc::clone(&pos)).ok()).flatten();
+            hash_move = hash.best_move().map(|mv| mv.validate(&pos).ok()).flatten();
         } else {
             hash_move = None;
         }
@@ -326,11 +326,10 @@ impl<T> Engine<T> where T: Protocol {
         && (depth < 4 || evaluate(&pos) >= beta)
         && !(pos.occupied_by(pos.turn()) & !pos.occupied_by_piece(pos.turn(), Piece::Pawn)
         & !pos.occupied_by_piece(pos.turn(), Piece::King)).is_empty() {
-            let mv = Move::<Arc<Position>>::null_move(Arc::clone(&pos));
-            if self.history.push(mv).is_ok() {
+            let mv = Move::null_move(&pos);
+            if self.history.push(mv.into()).is_ok() {
                 const R: u8 = 2;
-                let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R),
-                    -beta, -beta+1, false)?;
+                let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R), -beta, -beta+1, false)?;
                 self.history.pop();
 
                 if -val >= beta {
@@ -341,8 +340,8 @@ impl<T> Engine<T> where T: Protocol {
 
         // search each move
         let mut best_val = -Score::infinity();
-        for mv in hash_move.into_iter().chain(pos.moves().map(|m| m.into())) {
-            if self.history.push(mv).is_ok() {
+        for mv in hash_move.into_iter().chain(pos.moves()) {
+            if self.history.push(mv.into()).is_ok() {
                 let (val, child_pv) = if pv.is_none() {
                     self.search(ply+1, depth-1, -beta, -alpha, true)?
                 } else {
@@ -371,8 +370,7 @@ impl<T> Engine<T> where T: Protocol {
                 best_val = max(best_val, val);
                 if best_val > alpha {
                     alpha = best_val;
-                    let mut new_pv: MoveSequence<Arc<Position>>
-                        = mv.try_into().expect("INFALLIBLE");
+                    let mut new_pv: MoveSequence = mv.try_into().expect("INFALLIBLE");
                     if let Some(mut child_pv) = child_pv {
                         new_pv.append(&mut child_pv).expect("INFALLIBLE");
                     }
