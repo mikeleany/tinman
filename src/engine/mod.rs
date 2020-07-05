@@ -9,7 +9,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 use std::cmp::max;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Instant;
 use std::collections::VecDeque;
 use std::convert::TryInto;
@@ -39,7 +39,7 @@ pub struct Engine<T> where T: Protocol {
     nodes: u64,
     search_count: u16,
 
-    history: MoveSequence<Rc<Position>>,
+    history: MoveSequence<Arc<Position>>,
     color: chess::Color,
 }
 
@@ -164,7 +164,7 @@ impl<T> Engine<T> where T: Protocol {
     fn search_root(&mut self) -> Option<Thinking> {
         let mut thinking = Thinking::new();
         thinking.set_nodes(1);
-        let mut move_list: VecDeque<MoveSequence<Rc<Position>>> = VecDeque::new();
+        let mut move_list: VecDeque<MoveSequence<Arc<Position>>> = VecDeque::new();
         self.search_count += 1;
         self.nodes = 1;
 
@@ -271,8 +271,8 @@ impl<T> Engine<T> where T: Protocol {
         ply: usize, mut depth: u8,
         mut alpha: Score, beta: Score,
         null_move_allowed: bool)
-    -> Option<(Score, Option<MoveSequence<Rc<Position>>>)> {
-        let pos = Rc::clone(self.history.final_position());
+    -> Option<(Score, Option<MoveSequence<Arc<Position>>>)> {
+        let pos = Arc::clone(self.history.final_position());
         let mut pv = None;
 
         if self.time_to_stop() {
@@ -307,7 +307,7 @@ impl<T> Engine<T> where T: Protocol {
                 }
             }
 
-            hash_move = hash.best_move().map(|mv| mv.validate(Rc::clone(&pos)).ok()).flatten();
+            hash_move = hash.best_move().map(|mv| mv.validate(Arc::clone(&pos)).ok()).flatten();
         } else {
             hash_move = None;
         }
@@ -326,7 +326,7 @@ impl<T> Engine<T> where T: Protocol {
         && (depth < 4 || evaluate(&pos) >= beta)
         && !(pos.occupied_by(pos.turn()) & !pos.occupied_by_piece(pos.turn(), Piece::Pawn)
         & !pos.occupied_by_piece(pos.turn(), Piece::King)).is_empty() {
-            let mv = Move::<Rc<Position>>::null_move(Rc::clone(&pos));
+            let mv = Move::<Arc<Position>>::null_move(Arc::clone(&pos));
             if self.history.push(mv).is_ok() {
                 const R: u8 = 2;
                 let (val, _) = self.search(ply+1, (depth-1).saturating_sub(R),
@@ -371,7 +371,7 @@ impl<T> Engine<T> where T: Protocol {
                 best_val = max(best_val, val);
                 if best_val > alpha {
                     alpha = best_val;
-                    let mut new_pv: MoveSequence<Rc<Position>>
+                    let mut new_pv: MoveSequence<Arc<Position>>
                         = mv.try_into().expect("INFALLIBLE");
                     if let Some(mut child_pv) = child_pv {
                         new_pv.append(&mut child_pv).expect("INFALLIBLE");
