@@ -1,6 +1,6 @@
 [package]
 name = "chess"
-version = "0.1.0-dev1-rc1"
+version = "0.1.0-dev1-docs"
 authors = ["Mike Leany <55358344+mikeleany@users.noreply.github.com>"]
 edition = "2018"
 
