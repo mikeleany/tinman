@@ -1,6 +1,6 @@
-//! Contains structures related to the `Position`
+//! Contains structures related to the `Position`.
 //
-//  Copyright 2019 Michael Leany
+//  Copyright 2020 Michael Leany
 //
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -26,7 +26,7 @@ use Piece::*;
 ///     starting position.
 ///  -  The [`from_fen_str`](#method.from_fen_str) method (along with its synonyms `from_str` and
 ///     `str::parse`) creates a new `Position` structure from a string containing [Forsyth-Edwards
-///     Notation](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) (FEN).
+///     Notation (FEN)](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation).
 ///  -  Using a [`PositionBuilder`](struct.PositionBuilder.html).
 ///  -  As a result of [`Move::make`](struct.Move.html#method.make).
 ///
@@ -73,7 +73,7 @@ const CASTLE_BOTH_SIDES: u8 = CASTLE_KING_SIDE | CASTLE_QUEEN_SIDE;
 
 impl Position {
 
-    /// Returns the standard starting Position
+    /// Returns the standard starting Position.
     pub fn new() -> Position {
         let mut pos = Position {
             zobrist: Zobrist::new(),
@@ -129,7 +129,7 @@ impl Position {
         pos
     }
 
-    /// Returns a position with an empty board
+    /// Returns a position with an empty board.
     fn empty_board() -> Position {
         Position{
             zobrist: Zobrist::new(),
@@ -146,7 +146,7 @@ impl Position {
     }
 
     /// Parse a position from a string containing [Forsyth-Edwards
-    /// Notation](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) (FEN)
+    /// Notation (FEN)](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation).
     pub fn from_fen_str(s: &str) -> Result<Position> {
         use Error::*;
 
@@ -244,7 +244,7 @@ impl Position {
         Ok(pos.validate()?)
     }
 
-    /// Converts the position to a FEN string
+    /// Converts the position to a FEN string.
     pub fn to_fen_str(&self) -> String {
         // the board
         let mut board = String::new();
@@ -324,12 +324,12 @@ impl Position {
                                      half_move_clock, full_move_number)
     }
 
-    /// Returns the color whose turn it is
+    /// Returns the color whose turn it is.
     pub fn turn(&self) -> Color {
         self.turn
     }
 
-    /// Returns the en-passant square, if any
+    /// Returns the en-passant square, if any.
     pub fn en_passant_square(&self) -> Option<Square> {
         self.ep_square
     }
@@ -339,58 +339,58 @@ impl Position {
         self.in_check
     }
 
-    /// Returns `true` if king-side castling rights are available for `c`
+    /// Returns `true` if king-side castling rights are available for `c`.
     pub fn has_king_side_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] & CASTLE_KING_SIDE != 0
     }
 
-    /// Returns `true` if queen-side castling rights are available for `c`
+    /// Returns `true` if queen-side castling rights are available for `c`.
     pub fn has_queen_side_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] & CASTLE_QUEEN_SIDE != 0
     }
 
-    /// Returns `true` if any castling rights are available for `c`
+    /// Returns `true` if any castling rights are available for `c`.
     pub fn has_castling_rights(&self, c: Color) -> bool {
         self.castling_rights[c as usize] != 0
     }
 
     /// Returns `true` if a draw by the fifty move rule can be claimed (assuming the game isn't
-    /// already over)
+    /// already over).
     pub fn fifty_moves(&self) -> bool {
         self.draw_plies >= 100
     }
 
-    /// Returns the number of plies which count toward the fifty move rule
+    /// Returns the number of plies which count toward the fifty move rule.
     pub fn draw_plies(&self) -> usize {
         self.draw_plies
     }
 
-    /// Returns the move number
+    /// Returns the move number.
     pub fn move_number(&self) -> usize {
         self.move_num
     }
 
-    /// Returns a `Bitboard` of all occupied `Square`s
+    /// Returns a `Bitboard` of all occupied `Square`s.
     pub fn occupied(&self) -> Bitboard {
         self.occ_squares
     }
 
-    /// Returns a `Bitboard` of `Squares` occupied by player `c`
+    /// Returns a `Bitboard` of `Squares` occupied by player `c`.
     pub fn occupied_by(&self, c: Color) -> Bitboard {
         self.occ_by_color[c as usize]
     }
 
-    /// Returns a `Bitboard` of `Squares` occupied by the given `Piece` and `Color`
+    /// Returns a `Bitboard` of `Squares` occupied by the given `Piece` and `Color`.
     pub fn occupied_by_piece(&self, c: Color, p: Piece) -> Bitboard {
         self.occ_by_piece[c as usize][p as usize]
     }
 
-    /// Returns the square where the king of the given color is located
+    /// Returns the square where the king of the given color is located.
     pub fn king_location(&self, c: Color) -> Square {
         self.occupied_by_piece(c, King).peek().expect("INFALLIBLE")
     }
 
-    /// Returns the color and type of piece, if any, at the given location
+    /// Returns the color and type of piece, if any, at the given location.
     pub fn piece_at(&self, sq: Square) -> Option<(Color, Piece)> {
         if self.occ_squares.contains(sq) {
             for c in &[White, Black] {
@@ -409,7 +409,7 @@ impl Position {
         None
     }
 
-    /// Return the position's Zobrist key
+    /// Return the position's Zobrist key.
     pub fn zobrist_key(&self) -> Zobrist {
         self.zobrist
     }
@@ -640,7 +640,7 @@ impl Position {
         Ok(pos)
     }
 
-    /// Calculate the `Positions`'s Zobrist key from scratch
+    /// Calculate the `Positions`'s Zobrist key from scratch.
     fn calc_zobrist(&mut self) {
         self.zobrist = Zobrist::new();
 
@@ -694,7 +694,7 @@ impl Position {
         knight_attacks(sq).intersects(self.occupied_by_piece(c, Knight))
     }
 
-    /// Returns a bitboard containing all squares attacked by pawns of color `c`
+    /// Returns a bitboard containing all squares attacked by pawns of color `c`.
     pub fn pawn_attacks(&self, c: Color) -> Bitboard {
         let forward = if c == White { 1 } else { -1 };
         let pawns = self.occupied_by_piece(c, Pawn);
@@ -703,21 +703,21 @@ impl Position {
 }
 
 impl Default for Position {
-    /// Returns the standard starting Position
+    /// Returns the standard starting Position.
     fn default() -> Self {
         Position::new()
     }
 }
 
 impl fmt::Display for Position {
-    /// Writes out the position using FEN
+    /// Writes out the position using FEN.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_fen_str().fmt(f)
     }
 }
 
 impl fmt::Debug for Position {
-    /// Writes out the position using FEN
+    /// Writes out the position using FEN.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_fen_str().fmt(f)
     }
@@ -726,7 +726,7 @@ impl fmt::Debug for Position {
 impl FromStr for Position {
     type Err = Error;
 
-    /// Parse a position from a FEN string
+    /// Parse a position from a FEN string.
     fn from_str(s: &str) -> Result<Self> {
         Position::from_fen_str(s)
     }
@@ -749,12 +749,6 @@ mod tests {
     fn new_returns_the_standard_starting_position() {
         assert_eq!(Position::new().to_fen_str(),
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    }
-
-    /// Nothing to test for Position::empty_board()
-    #[test]
-    fn empty_board() {
-        Position::empty_board();
     }
 
     /// Tests for Position::from_fen_str()

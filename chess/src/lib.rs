@@ -1,33 +1,73 @@
-//! The `chess` module implements the
+//! The `chess` crate implements the
 //! [FIDE Laws of Chess](https://www.fide.com/FIDE/handbook/LawsOfChess.pdf).
-//
+//!
 //  Copyright 2020 Michael Leany
 //
 //  This Source Code Form is subject to the terms of the Mozilla Public
 //  License, v. 2.0. If a copy of the MPL was not distributed with this
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
-//! # Overview
-//! For a computer to play chess, it first needs a way to represent the board and
-//! [`Piece`](enum.Piece.html)s. Together these make up the [`Position`](struct.Position.html). The
-//! board is composed of eight [`File`](enum.File.html)s and eight [`Rank`](enum.Rank.html)s, which
-//! form sixty-four [`Square`](enum.Square.html)s on the board, with the pieces each occupying one
-//! square. Each piece has a [`Color`](enum.Color.html) which indicates which player the piece
-//! belongs to. A `Position` can be built using a [`PositionBuilder`](struct.PositionBuilder.html).
+//! The primary purpose behind this crate is to generate and validate moves from any given position.
+//! As such, the [`Move`][Move] and the [`Position`][Position] are the core data structures of the
+//! `chess` crate. It also contains the [`game`][game_mod] module for combining these together into
+//! [`MoveSequence`][MoveSequence]s and [`Game`][Game]s.
 //!
-//! The next thing the computer needs to understand are [`Move`](struct.Move.html)s. Representing a
-//! position is a fairly simple matter, but moves are a bit more complicated. Each piece moves in a
-//! different way. To help simplify this, we use [bitboards](bitboard/index.html) to compute which
-//! pieces can move where.
+//! # Positions
+//! The [`Position`][Position] structure is used to represent the arrangement of pieces on the
+//! board, along with meta-data, such as castling rights. The board representation used is the
+//! [`Bitboard`][Bitboard], and many of [`Position`][Position]'s routines return
+//! [`Bitboard`][Bitboard]s. A [`Position`][Position] can be built using a
+//! [`PositionBuilder`][PositionBuilder] or with [`Position`][Position]'s constructor methods
+//! [`new`][position_new] and [`from_fen_str`][from_fen_str].
 //!
-//! A specific `Move` can be built and validated using a [`MoveBuilder`](struct.MoveBuilder.html),
-//! which is great when you already have a specific move in mind. However, we need a way to
-//! generate lists of `Move`s. For that, we have two iterators: [`Moves`](struct.Moves.html) and
-//! [`PromotionsAndCaptures`](struct.PromotionsAndCaptures.html). `Moves` generates all valid moves
-//! from a `Position`. `PromotionsAndCaptures`, as its name suggests, generates just promotion and
-//! capture moves. The typical way to construct these iterators is with the methods
-//! [`Position::moves`](struct.Position.html#method.moves) and
-//! [`Position::promotions_and_captures()`](struct.Position.html#method.promotions_and_captures).
+//! # Moves
+//! Every [`Move`][Move] is composed of a moved [`Piece`][Piece] an origin [`Square`][Square] and a
+//! destination [`Square`][Square]. Some moves will also have a captured [`Piece`][Piece] and/or
+//! a [`Promotion`][Promotion] piece. To keep track of where the move is valid, it also need to keep
+//! a reference to the [`Position`][Position] where it is valid. [`Move`][Move] structures can be
+//! built using [`MoveBuilder`][MoveBuilder].
+//!
+//! Since carrying a reference around, means that a [`Move`][Move] cannot outlive the
+//! [`Position`][Position] where it's valid, a more versatile alternative, [`MoveRc`][MoveRc], is
+//! also provided. As its name implies, rather than having a reference to a
+//! [`Position`][Position], [`MoveRc`][MoveRc] uses an [`Rc<Position>`][Rc] instead. Both
+//! [`Move`][Move] and [`MoveRc`][MoveRc] implement the [`ValidMove`][ValidMove] trait, which
+//! provides all the methods necessary to work with moves.
+//!
+//! # Move Generation
+//! As mentioned previously, the primary purpose behind the `chess` crate is to generate and
+//! validate moves. [`MoveBuilder`][MoveBuilder] can be used for move validation, and
+//! [`Position`][Position] provides some routines for the purpose of move generation. They are
+//! [`moves`][moves], which returns an iterator over all valid moves, and
+//! [`promotions_and_captures`][prom_and_capt], which, as its name suggests, returns an iterator
+//! over just promotions and captures.
+//!
+//! A distinction should be noted here between valid and legal moves. So far the term legal has not
+//! been used to describe moves. That is because verifying full legality is more expensive than
+//! verifying psuedo-legality, or validity. Within Tinman's code and documentation, if a move is
+//! referred to here as valid, that means it is legal if and only if the king is not left in
+//! check, and, for castling moves, if it does not pass through an attacked square. To verify full
+//! legality of a [`ValidMove`][ValidMove], the move must be made, using the [`make`][make] method.
+//!
+//! [Piece]: enum.Piece.html
+//! [Square]: enum.Square.html
+//! [Promotion]: enum.Promotion.html
+//! [Move]: struct.Move.html
+//! [MoveRc]: struct.MoveRc.html
+//! [ValidMove]: trait.ValidMove.html
+//! [make]: trait.ValidMove.html#method.make
+//! [MoveBuilder]: struct.MoveBuilder.html
+//! [Position]: struct.Position.html
+//! [position_new]: struct.Position.html#method.new
+//! [from_fen_str]: struct.Position.html#method.from_fen_str
+//! [moves]: struct.Position.html#method.moves
+//! [prom_and_capt]: struct.Position.html#method.promotions_and_captures
+//! [PositionBuilder]: struct.PositionBuilder.html
+//! [Bitboard]: bitboard/struct.Bitboard.html
+//! [game_mod]: game/index.html
+//! [MoveSequence]: game/struct.MoveSequence.html
+//! [Game]: game/struct.Game.html
+//! [Rc]: https://doc.rust-lang.org/std/rc/struct.Rc.html
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 #![warn(missing_docs, missing_debug_implementations, unused_extern_crates)]
 #![warn(clippy::unimplemented, clippy::todo)]
@@ -44,7 +84,7 @@ pub use error::*;
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Which side a piece or player is on, based on the color of the pieces for that side.
 ///
-/// `Color` implements `Not`, so that we can do the following:
+/// `Color` implements [`Not`][Not], so that we can do the following:
 ///
 /// ```rust
 /// use chess::Color;
@@ -56,6 +96,23 @@ pub use error::*;
 /// turn = !turn;
 /// assert_eq!(turn, Color::White);
 /// ```
+///
+/// `Color` also implements [`Display`][Display] and [`FromStr`][FromStr].
+///
+/// ```rust
+/// use chess::Color;
+/// use std::str::FromStr;
+///
+/// assert_eq!(Color::from_str("w"), Ok(Color::White));
+/// assert_eq!(Color::from_str("b"), Ok(Color::Black));
+///
+/// assert_eq!(format!("{}", Color::White), "w");
+/// assert_eq!(format!("{}", Color::Black), "b");
+/// ```
+///
+/// [Not]: https://doc.rust-lang.org/std/ops/trait.Not.html
+/// [Display]: https://doc.rust-lang.org/std/fmt/trait.Display.html
+/// [FromStr]: https://doc.rust-lang.org/std/str/trait.FromStr.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub enum Color {
@@ -125,7 +182,43 @@ impl From<Color> for usize {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// The type of a chess piece
+/// The type of a chess piece.
+///
+/// The [`Display`][Display] trait produces uppercase letters.
+///
+/// ```
+/// use chess::Piece;
+/// assert_eq!(format!("{}", Piece::Pawn), "P");
+/// assert_eq!(format!("{}", Piece::Knight), "N");
+/// assert_eq!(format!("{}", Piece::Bishop), "B");
+/// assert_eq!(format!("{}", Piece::Rook), "R");
+/// assert_eq!(format!("{}", Piece::Queen), "Q");
+/// assert_eq!(format!("{}", Piece::King), "K");
+/// ```
+///
+/// However, [`FromStr`][FromStr] can parse uppercase or lowercase.
+///
+/// ```rust
+/// use chess::Piece;
+/// use std::str::FromStr;
+///
+/// assert_eq!(Piece::from_str("P"), Ok(Piece::Pawn));
+/// assert_eq!(Piece::from_str("N"), Ok(Piece::Knight));
+/// assert_eq!(Piece::from_str("B"), Ok(Piece::Bishop));
+/// assert_eq!(Piece::from_str("R"), Ok(Piece::Rook));
+/// assert_eq!(Piece::from_str("Q"), Ok(Piece::Queen));
+/// assert_eq!(Piece::from_str("K"), Ok(Piece::King));
+///
+/// assert_eq!(Piece::from_str("p"), Ok(Piece::Pawn));
+/// assert_eq!(Piece::from_str("n"), Ok(Piece::Knight));
+/// assert_eq!(Piece::from_str("b"), Ok(Piece::Bishop));
+/// assert_eq!(Piece::from_str("r"), Ok(Piece::Rook));
+/// assert_eq!(Piece::from_str("q"), Ok(Piece::Queen));
+/// assert_eq!(Piece::from_str("k"), Ok(Piece::King));
+/// ```
+///
+/// [Display]: https://doc.rust-lang.org/std/fmt/trait.Display.html
+/// [FromStr]: https://doc.rust-lang.org/std/str/trait.FromStr.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub enum Piece {
@@ -356,7 +449,8 @@ impl From<Rank> for usize {
 /// use chess::{Square, File, Rank};
 ///
 /// let square = Square::A1;
-/// assert_eq!((square.file(), square.rank()), (File::A, Rank::R1));
+/// assert_eq!(square.file(), File::A);
+/// assert_eq!(square.rank(), Rank::R1);
 /// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
@@ -456,19 +550,6 @@ mod color_tests {
     use super::Color;
 
     #[test]
-    fn display_trait_works() {
-        assert_eq!(format!("{}", Color::White), "w");
-        assert_eq!(format!("{}", Color::Black), "b");
-    }
-
-    #[test]
-    fn fromstr_trait_works() {
-        assert_eq!("w".parse::<Color>().unwrap(), Color::White);
-        assert_eq!("b".parse::<Color>().unwrap(), Color::Black);
-        assert!("x".parse::<Color>().is_err());
-    }
-
-    #[test]
     fn default_is_white() {
         assert_eq!(Color::White, Default::default());
     }
@@ -491,34 +572,6 @@ mod color_tests {
 mod piece_tests {
     use std::convert::TryFrom;
     use super::Piece;
-
-    #[test]
-    fn display_trait_works() {
-        assert_eq!(format!("{}", Piece::Pawn), "P");
-        assert_eq!(format!("{}", Piece::Knight), "N");
-        assert_eq!(format!("{}", Piece::Bishop), "B");
-        assert_eq!(format!("{}", Piece::Rook), "R");
-        assert_eq!(format!("{}", Piece::Queen), "Q");
-        assert_eq!(format!("{}", Piece::King), "K");
-    }
-
-    #[test]
-    fn fromstr_trait_works() {
-        assert_eq!("P".parse::<Piece>().unwrap(), Piece::Pawn);
-        assert_eq!("N".parse::<Piece>().unwrap(), Piece::Knight);
-        assert_eq!("B".parse::<Piece>().unwrap(), Piece::Bishop);
-        assert_eq!("R".parse::<Piece>().unwrap(), Piece::Rook);
-        assert_eq!("Q".parse::<Piece>().unwrap(), Piece::Queen);
-        assert_eq!("K".parse::<Piece>().unwrap(), Piece::King);
-        assert!("X".parse::<Piece>().is_err());
-        assert_eq!("p".parse::<Piece>().unwrap(), Piece::Pawn);
-        assert_eq!("n".parse::<Piece>().unwrap(), Piece::Knight);
-        assert_eq!("b".parse::<Piece>().unwrap(), Piece::Bishop);
-        assert_eq!("r".parse::<Piece>().unwrap(), Piece::Rook);
-        assert_eq!("q".parse::<Piece>().unwrap(), Piece::Queen);
-        assert_eq!("k".parse::<Piece>().unwrap(), Piece::King);
-        assert!("x".parse::<Piece>().is_err());
-    }
 
     #[test]
     fn default_is_pawn() {
