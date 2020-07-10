@@ -7,11 +7,11 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::ops::Deref;
 use std::slice::SliceIndex;
 use std::ops::Index;
 use std::iter::FusedIterator;
 use std::iter::FromIterator;
+use std::rc::Rc;
 use std::time::Duration;
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -20,14 +20,14 @@ use super::*;
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A structure to represent a sequence of moves and resulting positions
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct MoveSequence<P: AsRef<Position> + Deref<Target = Position>> {
-    moves: Vec<Move<P>>,
-    final_pos: P,
+pub struct MoveSequence {
+    moves: Vec<MoveRc>,
+    final_pos: Rc<Position>,
 }
 
-impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
+impl MoveSequence {
     /// Constructs an empty `MoveSequence` starting at the standard starting position.
-    pub fn new() -> Self where P: From<Position> {
+    pub fn new() -> MoveSequence {
         MoveSequence {
             moves: Vec::new(),
             final_pos: Position::new().into(),
@@ -35,7 +35,7 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     }
 
     /// Constructs an empty `MoveSequence` starting at the given initial position.
-    pub fn starting_at(initial_pos: P) -> Self {
+    pub fn starting_at(initial_pos: Rc<Position>) -> MoveSequence {
         MoveSequence {
             moves: Vec::new(),
             final_pos: initial_pos,
@@ -47,10 +47,14 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     /// If `len` is greater than the move sequence's current length, this has no effect.
     pub fn truncate(&mut self, len: usize) {
         if len < self.len() {
-            self.final_pos = self.moves.swap_remove(len).into_position();
-
+            self.final_pos = self.moves[len].position().clone();
             self.moves.truncate(len);
         }
+    }
+
+    /// Extracts a slice containing the entire move sequence.
+    pub fn as_slice(&self) -> &[MoveRc] {
+        self.moves.as_slice()
     }
 
     /// Adds a move onto the end of the move sequence and returns the resulting position.
@@ -58,22 +62,22 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     /// # Errors
     ///
     /// Returns an error if `mv.position()` is not the same as `self.final_position()` or if
-    /// `mv.make_arc()` returns and error.
-    pub fn push(&mut self, mv: Move<P>) -> Result<&P> where P: From<Position> {
-        if mv.position() == self.final_position().as_ref() {
-            self.final_pos = mv.make()?.into();
+    /// `mv.make()` returns and error.
+    pub fn push(&mut self, mv: MoveRc) -> Result<&Rc<Position>> {
+        if mv.position().as_ref() == self.final_pos.as_ref() {
+            self.final_pos = mv.make()?;
             self.moves.push(mv);
 
-            Ok(self.final_position())
+            Ok(&self.final_pos)
         } else {
             Err(Error::MovePositionMismatch)
         }
     }
 
     /// Removes the last move from the move sequence and returns it, or `None` if it is empty.
-    pub fn pop(&mut self) -> Option<Move<P>> where P: Clone {
+    pub fn pop(&mut self) -> Option<MoveRc> {
         if let Some(mv) = self.moves.pop() {
-            self.final_pos = mv.position_outer().clone();
+            self.final_pos = mv.position().clone();
 
             Some(mv)
         } else {
@@ -86,13 +90,12 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     /// # Errors
     ///
     /// Returns an error if `other.initial_position()` is not the same as `self.final_position()`.
-    pub fn append(&mut self, other: &mut Self) -> Result<&P>
-        where P: Clone {
-        if other.initial_position().as_ref() == self.final_position().as_ref() {
+    pub fn append(&mut self, other: &mut MoveSequence) -> Result<&Rc<Position>> {
+        if other.initial_position().as_ref() == self.final_pos.as_ref() {
             self.moves.append(&mut other.moves);
             self.final_pos = other.final_position().clone();
 
-            Ok(self.final_position())
+            Ok(&self.final_pos)
         } else {
             Err(Error::MovePositionMismatch)
         }
@@ -101,7 +104,7 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     /// Removes all moves from the move sequence, leaving only the initial position.
     pub fn clear(&mut self) {
         if !self.is_empty() {
-            self.final_pos = self.moves.swap_remove(0).into_position();
+            self.final_pos = self.moves[0].position().clone();
             self.moves.clear();
         }
     }
@@ -117,22 +120,26 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     }
 
     /// Returns the first move in the sequence.
-    pub fn first(&self) -> Option<&Move<P>> {
+    pub fn first(&self) -> Option<&MoveRc> {
         self.moves.first()
     }
 
     /// Returns the last move in the sequence.
-    pub fn last(&self) -> Option<&Move<P>> {
+    pub fn last(&self) -> Option<&MoveRc> {
         self.moves.last()
     }
 
     /// Returns the initial position of the move sequence.
-    pub fn initial_position(&self) -> &P {
-        self.moves.first().map_or(&self.final_pos, |m| m.position_outer())
+    pub fn initial_position(&self) -> &Rc<Position> {
+        if !self.is_empty() {
+            self.moves[0].position()
+        } else {
+            &self.final_pos
+        }
     }
 
     /// Returns the final position of the move sequence.
-    pub fn final_position(&self) -> &P {
+    pub fn final_position(&self) -> &Rc<Position> {
         &self.final_pos
     }
 
@@ -142,34 +149,36 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     ///   bounds
     /// - If given a range, returns the subslice corresponding to that range, or `None` if out of
     ///   bounds.
-    pub fn get<I>(&self, index: I) -> Option<&<I as SliceIndex<[Move<P>]>>::Output>
-        where I: SliceIndex<[Move<P>]> {
+    pub fn get<I>(&self, index: I) -> Option<&<I as SliceIndex<[MoveRc]>>::Output>
+        where I: SliceIndex<[MoveRc]> {
         self.moves.get(index)
     }
 
-    /// Returns a the position at `index` or `None` if out of bounds.
+    /// Returns a reference to the position at `index` or `None` if out of bounds.
     ///
     /// Note that an index of `self.len()` is in bounds and will return the final position, which
     /// is the result of the last move.
-    pub fn position(&self, index: usize) -> Option<&P> {
-        if index != self.len() {
-            self.moves.get(index).map(|m| m.position_outer())
-        } else {
-            Some(&self.final_pos)
+    pub fn position(&self, index: usize) -> Option<&Rc<Position>> {
+        use std::cmp::Ordering;
+
+        match index.cmp(&self.len()) {
+            Ordering::Less => Some(&self.moves[index].position()),
+            Ordering::Equal => Some(&self.final_pos),
+            Ordering::Greater => None,
         }
     }
 
     /// Returns an iterator over the move sequence.
-    pub fn iter(&self) -> Iter<P> {
+    pub fn iter(&self) -> Iter {
         self.moves.iter()
     }
 
     /// Returns an iterator over the positions in the move sequence, from the intial position up to
     /// and including the final position.
-    pub fn positions(&self) -> Positions<P> {
+    pub fn positions(&self) -> Positions {
         Positions {
-            moves: self.iter(),
-            final_pos: std::iter::once(&self.final_pos),
+            moves: self.moves.iter(),
+            final_pos: Some(&self.final_pos),
         }
     }
 
@@ -210,8 +219,8 @@ impl<P: AsRef<Position> + Deref<Target = Position>> MoveSequence<P> {
     }
 }
 
-impl<P: AsRef<Position> + Deref<Target = Position>> IntoIterator for MoveSequence<P> {
-    type Item = Move<P>;
+impl IntoIterator for MoveSequence {
+    type Item = MoveRc;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -219,11 +228,10 @@ impl<P: AsRef<Position> + Deref<Target = Position>> IntoIterator for MoveSequenc
     }
 }
 
-impl<P> TryFrom<Move<P>> for MoveSequence<P>
-    where P: From<Position> + AsRef<Position> + Deref<Target = Position> {
+impl TryFrom<MoveRc> for MoveSequence {
     type Error = Error;
 
-    fn try_from(mv: Move<P>) -> Result<Self> {
+    fn try_from(mv: MoveRc) -> Result<Self> {
         let final_pos = mv.make()?.into();
 
         Ok(MoveSequence {
@@ -233,9 +241,8 @@ impl<P> TryFrom<Move<P>> for MoveSequence<P>
     }
 }
 
-impl<P> FromIterator<Move<P>> for Result<MoveSequence<P>>
-    where P: From<Position> + AsRef<Position> + Deref<Target = Position> {
-    fn from_iter<I: IntoIterator<Item=Move<P>>>(iter: I) -> Self {
+impl FromIterator<MoveRc> for Result<MoveSequence> {
+    fn from_iter<I: IntoIterator<Item=MoveRc>>(iter: I) -> Self {
         let mut iter = iter.into_iter();
 
         let mut seq = if let Some(mv) = iter.next() {
@@ -252,8 +259,7 @@ impl<P> FromIterator<Move<P>> for Result<MoveSequence<P>>
     }
 }
 
-impl<I, P> Index<I> for MoveSequence<P>
-    where I: SliceIndex<[Move<P>]>, P: AsRef<Position> + Deref<Target = Position> {
+impl<I> Index<I> for MoveSequence where I: SliceIndex<[MoveRc]> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -261,7 +267,7 @@ impl<I, P> Index<I> for MoveSequence<P>
     }
 }
 
-impl<P: AsRef<Position> + Deref<Target = Position>> fmt::Display for MoveSequence<P> {
+impl fmt::Display for MoveSequence {
     /// The move is formatted as follows:
     ///
     /// "{}" -- Space delimited sequence of SAN (eg e4 e5 Nf3)
@@ -290,13 +296,12 @@ impl<P: AsRef<Position> + Deref<Target = Position>> fmt::Display for MoveSequenc
     }
 }
 
-impl<P> FromStr for MoveSequence<P>
-    where P: Clone + From<Position> + AsRef<Position> + Deref<Target = Position> {
+impl FromStr for MoveSequence {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> Result<MoveSequence> {
         let re = regex::Regex::new(r"\s+|\s*\d+\s*\.\s*").expect("regex error");
-        let mut seq = MoveSequence::<P>::new();
+        let mut seq = MoveSequence::new();
 
         for mv in re.split(s) {
             if mv.is_empty()
@@ -307,52 +312,70 @@ impl<P> FromStr for MoveSequence<P>
                 continue;
             }
 
-            let mv = mv.parse::<MoveBuilder>()?.validate::<P>(seq.final_pos.clone())?;
-            seq.push(mv)?;
+            let pos = Rc::clone(seq.final_position());
+            let mv = mv.parse::<MoveBuilder>()?.validate(&pos)?;
+            seq.push(mv.into())?;
         }
 
         Ok(seq)
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Iterator over the moves in a MoveSequence
-pub type Iter<'a, P> = std::slice::Iter<'a, Move<P>>;
-
+pub type Iter<'a>=std::slice::Iter<'a, MoveRc>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An iterator over the positions in the move sequence, from the intial position up to and
 /// including the final position.
-#[derive(Debug,Clone)]
-pub struct Positions<'a, P: Deref<Target = Position>> {
-    moves: Iter<'a, P>,
-    final_pos: std::iter::Once<&'a P>,
+#[derive(Debug, Clone)]
+pub struct Positions<'a> {
+    moves: Iter<'a>,
+    final_pos: Option<&'a Rc<Position>>,
 }
 
-impl<'a, P> Iterator for Positions<'a, P> where P: Deref<Target = Position> {
-    type Item = &'a P;
+impl<'a> Iterator for Positions<'a> {
+    type Item = &'a Rc<Position>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.moves.next().map(|m| m.position_outer()).or_else(|| self.final_pos.next())
+        if let Some(mv) = self.moves.next() {
+            Some(mv.position())
+        } else if let Some(pos) = self.final_pos {
+            self.final_pos = None;
+
+            Some(pos)
+        } else {
+            None
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.moves.len() + self.final_pos.len();
+        if self.final_pos.is_some() {
+            let size = self.moves.len() + 1;
 
-        (size, Some(size))
+            (size, Some(size))
+        } else {
+            self.moves.size_hint()
+        }
     }
 }
 
-impl<P> DoubleEndedIterator for Positions<'_, P> where P: Deref<Target = Position> {
+impl DoubleEndedIterator for Positions<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.final_pos.next().or_else(|| self.moves.next().map(|m| m.position_outer()))
+        if let Some(pos) = self.final_pos {
+            self.final_pos = None;
+
+            Some(pos)
+        } else if let Some(mv) = self.moves.next() {
+            Some(mv.position())
+        } else {
+            None
+        }
     }
 }
 
-impl<P> ExactSizeIterator for Positions<'_, P> where P: Deref<Target = Position> { }
-impl<P> FusedIterator for Positions<'_, P> where P: Deref<Target = Position> { }
-
+impl ExactSizeIterator for Positions<'_> { }
+impl FusedIterator for Positions<'_> { }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Time controls for a game
@@ -534,28 +557,23 @@ impl fmt::Display for DrawReason {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A chess game
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Game<P: From<Position> + AsRef<Position> + Deref<Target = Position>> {
+pub struct Game {
     clock: Clock,
-    moves: MoveSequence<P>,
+    moves: MoveSequence,
     result: Option<GameResult>,
 }
 
-impl<P> Game<P> where P: From<Position> + AsRef<Position> + Deref<Target = Position> {
+impl Game {
     /// Creates a new game from the standard starting position
     pub fn new() -> Self {
-        Game {
-            clock: Clock::default(),
-            moves: MoveSequence::new(),
-            result: None,
-        }
+        Game::default()
     }
 
     /// Creates a new game using `pos` as the starting position
-    pub fn starting_at(initial_pos: P) -> Self {
+    pub fn starting_at(pos: Position) -> Self {
         Game {
-            clock: Clock::default(),
-            moves: MoveSequence::starting_at(initial_pos),
-            result: None,
+            moves: MoveSequence::starting_at(pos.into()),
+            ..Default::default()
         }
     }
 
@@ -572,12 +590,12 @@ impl<P> Game<P> where P: From<Position> + AsRef<Position> + Deref<Target = Posit
     }
 
     /// Returns a reference counted pointer to the current position
-    pub fn position(&self) -> &P {
+    pub fn position(&self) -> &Rc<Position> {
         self.moves.final_position()
     }
 
     /// Returns the game's position history
-    pub fn history(&self) -> &MoveSequence<P> {
+    pub fn history(&self) -> &MoveSequence {
         &self.moves
     }
 
@@ -602,7 +620,7 @@ impl<P> Game<P> where P: From<Position> + AsRef<Position> + Deref<Target = Posit
     }
 
     /// Make the given move
-    pub fn make_move(&mut self, mv: Move<P>) -> Result<&mut Self> {
+    pub fn make_move(&mut self, mv: MoveRc) -> Result<&mut Self> {
         self.moves.push(mv)?;
 
         self.check_game_result();
@@ -612,7 +630,7 @@ impl<P> Game<P> where P: From<Position> + AsRef<Position> + Deref<Target = Posit
 
     /// Make the given move and (if successful) update the clock based on `elapsed` time and the
     /// game's time control.
-    pub fn make_move_timed(&mut self, mv: Move<P>, elapsed: Duration) -> Result<&mut Self> {
+    pub fn make_move_timed(&mut self, mv: MoveRc, elapsed: Duration) -> Result<&mut Self> {
         let color = mv.color();
 
         self.make_move(mv)?;
@@ -622,23 +640,26 @@ impl<P> Game<P> where P: From<Position> + AsRef<Position> + Deref<Target = Posit
     }
 
     /// Make the given move
-    pub fn make_move_from_str(&mut self, mv: &str) -> Result<&mut Self> where P: Clone {
-        let mv: Move<P> = MoveBuilder::from_str(mv)?.validate::<P>(self.position().clone())?;
+    pub fn make_move_from_str(&mut self, mv: &str) -> Result<&mut Self> {
+        let mv: MoveRc = MoveBuilder::from_str(mv)?
+            .validate(self.position())?
+            .into();
 
         self.make_move(mv)
     }
 
     /// Make the given move and (if successful) update the clock based on `elapsed` time and the
     /// game's time control.
-    pub fn make_move_from_str_timed(&mut self, mv: &str, elapsed: Duration) -> Result<&mut Self>
-        where P: Clone {
-        let mv: Move<P> = MoveBuilder::from_str(mv)?.validate::<P>(self.position().clone())?;
+    pub fn make_move_from_str_timed(&mut self, mv: &str, elapsed: Duration) -> Result<&mut Self> {
+        let mv: MoveRc = MoveBuilder::from_str(mv)?
+            .validate(self.position())?
+            .into();
 
         self.make_move_timed(mv, elapsed)
     }
 
     /// Undoes the last move. Returns false if there are no moves to undo.
-    pub fn undo(&mut self) -> bool where P: Clone {
+    pub fn undo(&mut self) -> bool {
         self.moves.pop().is_some()
     }
 

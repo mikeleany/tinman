@@ -438,7 +438,7 @@ impl From<Square> for usize {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 pub mod bitboard;
 mod moves;
-pub use moves::{Move, MoveType, Promotion, MoveBuilder};
+pub use moves::{ValidMove, Move, MoveRc, MoveType, Promotion, MoveBuilder};
 mod position;
 pub use position::Position;
 pub use position::builder::PositionBuilder;

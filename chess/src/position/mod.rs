@@ -7,7 +7,6 @@
 //  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-use std::ops::Deref;
 use std::convert::TryInto;
 use std::fmt;
 use super::*;
@@ -41,6 +40,7 @@ use Piece::*;
 ///
 /// ```rust
 /// use chess::Position;
+/// use chess::ValidMove;
 ///
 /// let pos = Position::new();
 ///
@@ -452,7 +452,7 @@ impl Position {
     }
 
     /// Make the move, returning the resulting position.
-    pub fn make_move<P: Deref<Target = Position>>(mv: &Move<P>) -> Result<Position> {
+    pub fn make_move<T: ValidMove>(mv: &T) -> Result<Position> {
         if mv.move_type() == MoveType::NullMove {
             return mv.position().make_null_move();
         }
