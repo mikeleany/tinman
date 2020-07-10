@@ -1,4 +1,4 @@
-//! Contains structures to represent and generate moves
+//! Contains structures to represent and validate moves.
 //
 //  Copyright 2020 Michael Leany
 //
@@ -14,26 +14,33 @@ use Piece::*;
 use Color::*;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// The type of move
+/// Indicates whether a move is of a special type, such as castling.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MoveType {
-    /// Any move which is not castling, a two-square pawn advancement, en-passant capture, or pawn
-    /// promotion
+    /// Any move which is not of one of the other types.
     Standard,
-    /// A castling move
+    /// A castling move.
     Castling,
-    /// A two-square pawn advancement
+    /// A two-square pawn advancement.
     Advance2,
-    /// An en passant capture
+    /// An en passant capture.
     EnPassant,
-    /// A pawn promotion to the given piece type
+    /// A pawn promotion to the given piece type.
     Promotion(Promotion),
-    /// Skip this player's move (not legal, but useful to the engine)
+    /// Skip this player's move (not legal, but useful to the engine).
     NullMove,
 }
 
 impl MoveType {
     /// Returns `true` if the `MoveType` is a promotion.
+    ///
+    /// ```
+    /// use chess::{MoveType, Promotion};
+    /// use Promotion::*; // to avoid typing Promotion repetitively.
+    ///
+    /// assert!(MoveType::Promotion(ToKnight).is_promotion());
+    /// assert!(!MoveType::Castling.is_promotion());
+    /// ```
     pub fn is_promotion(self) -> bool {
         if let MoveType::Promotion(_) = self {
             true
@@ -50,7 +57,15 @@ impl Default for MoveType {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Which piece to promote to for a promotion move
+/// Which piece to promote to for a promotion move.
+///
+/// Can easily be converted to [`Piece`](enum.Piece.html).
+///
+/// ```
+/// use chess::{Piece, Promotion};
+///
+/// assert_eq!(Piece::from(Promotion::ToRook), Piece::Rook);
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Promotion {
@@ -78,7 +93,8 @@ impl From<Promotion> for Piece {
 /// A valid (pseudo-legal) move from a specific position.
 ///
 /// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `ValidMove::make()` to verify full legality.
+/// involve castling through check. Use [`ValidMove::make()`](#method.make) to verify full legality.
+/// See example for [`Move`](struct.Move.html).
 pub trait ValidMove {
     /// Returns the position from which this move is valid.
     fn position(&self) -> &Position;
@@ -126,10 +142,26 @@ pub trait ValidMove {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// A valid (pseudo-legal) move from a specific position.
 ///
-/// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `Move::make()` to verify full legality.
-///
 /// Cannot outlive the position it is tied to.
+///
+/// Note that the move might not be fully legal, specifically, it may leave the mover in check or
+/// involve castling through check. Use [`Move::make()`](#method.make) to verify full legality, as
+/// seen in the following example.
+///
+/// ```
+/// use chess::{Position, MoveBuilder, ValidMove, Error};
+/// use std::str::FromStr;
+///
+/// // position with white rook on a1 and black king on a8
+/// let pos = Position::from_str("k7/8/8/8/8/8/8/R3K3 b Q - 0 1")?;
+///
+/// let mv = MoveBuilder::from_str("Ka7")?.validate(&pos)?; // valid, but not legal
+/// assert_eq!(mv.make(), Err(Error::KingCapturable));
+///
+/// let mv = MoveBuilder::from_str("Kb7")?.validate(&pos)?; // fully legal
+/// assert!(mv.make().is_ok());
+/// # Ok::<(), chess::Error>(())
+/// ```
 ///
 /// See the [ValidMove](trait.ValidMove.html) trait for a list of methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -265,7 +297,8 @@ impl<'a> fmt::Display for Move<'a> {
 /// A valid (pseudo-legal) move from a specific position, with no lifetime restrictions. 
 ///
 /// Note that the move might not be fully legal, specifically, it may leave the mover in check or
-/// involve castling through check. Use `MoveRc::make()` to verify full legality.
+/// involve castling through check. Use [`MoveRc::make()`](#method.make) to verify full legality.
+/// See example for [`Move`](struct.Move.html).
 ///
 /// See the [ValidMove](trait.ValidMove.html) trait for a list of methods.
 #[derive(Debug, Clone, PartialEq, Eq)]

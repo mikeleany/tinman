@@ -1,5 +1,5 @@
-//! The engine
-//
+//! Implements the search, evaluation, transposition table, and other decision-making components.
+//!
 //  Copyright 2020 Michael Leany
 //
 //  This Source Code Form is subject to the terms of the Mozilla Public
@@ -20,13 +20,27 @@ use protocols::{Protocol, Action, SearchAction, Thinking};
 
 mod eval;
 use eval::{evaluate, piece_val};
-pub use eval::Score;
+use eval::Score;
 
 mod hash;
 use hash::{HashTable, HashEntry, Bound};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// The engine
+/// The core of the Tinman chess engine.
+///
+/// The `Engine` is meant to take control of the applicaton once it is ready to begin playing chess.
+/// The `Engine` handles input and output using the `Protocol` object passed to the `new` method. 
+///
+/// The `run` method implements the main loop for the engine, and exits when it's time for the
+/// engine to shut down.
+///
+/// # Example
+/// ```no_run
+/// use tinman::Engine;
+/// use protocols::xboard::Xboard;
+///
+/// Engine::new(Xboard::new()).run();
+/// ```
 #[derive(Debug)]
 pub struct Engine<T> where T: Protocol {
     protocol: T,
@@ -46,7 +60,7 @@ pub struct Engine<T> where T: Protocol {
 impl<T> Engine<T> where T: Protocol {
     const DEFAULT_HASH_SIZE: usize = 0x0000_1000_0000; // default to 256 MB hash
 
-    /// Creates a new Engine.
+    /// Creates a new `Engine` which will use `protocol` to communicate with the client.
     pub fn new(protocol: T) -> Self {
         Engine {
             protocol,
@@ -62,12 +76,19 @@ impl<T> Engine<T> where T: Protocol {
         }
     }
 
-    /// Runs the engine.
+    /// Tinman's main loop.
+    ///
+    /// Plays games of chess, using the `Protocol` passed to `new` to communicate moves with its
+    /// opponent. Does not exit until it is time for the engine to shut down. This method consumes
+    /// the `Engine`.
     ///
     /// # Panics
-    ///
     /// Panics if a ponder move returned by the protocol, is not legal.
-    pub fn run(&mut self) {
+    ///
+    /// ## TODO
+    /// Change `Protocol::ponder_move` to guarantee that the move is legal, so this panic is no
+    /// longer necessary.
+    pub fn run(mut self) {
         loop {
             match self.protocol.wait_for_direction() {
                 Action::Search => {
@@ -178,7 +199,7 @@ impl<T> Engine<T> where T: Protocol {
 
         // if no legal moves
         if move_list.is_empty() {
-            // TODO: how should we really handle this?
+            // TODO: set the score depending on if it's stalemate or checkmate
             return Some(thinking);
         }
 
@@ -500,4 +521,4 @@ impl<T> Engine<T> where T: Protocol {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// An engine error
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Error;
+struct Error;
